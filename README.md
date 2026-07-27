@@ -21,7 +21,7 @@ Layout of this repository:
 ```
 lib/, exe/          The crawler itself
 systemd/            service / timer units for the VPS
-scripts/            Daily export + git push script
+scripts/            Daily export + git push script, monthly archive script
 ```
 
 Division of roles (spec §1):
