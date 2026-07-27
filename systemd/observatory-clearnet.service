@@ -1,0 +1,15 @@
+[Unit]
+Description=btc-node-observatory clearnet crawl (single snapshot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=observatory
+WorkingDirectory=/opt/btc-node-observatory
+# crawl continues even if import fails (do not stop observing when the addrman source is temporarily down)
+ExecStartPre=-/bin/bash -lc 'bundle exec exe/observatory import'
+ExecStart=/bin/bash -lc 'bundle exec exe/observatory crawl clearnet'
+# fd limit for 500 concurrent connections
+LimitNOFILE=65536
+Nice=10

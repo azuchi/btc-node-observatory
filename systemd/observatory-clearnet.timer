@@ -1,0 +1,11 @@
+[Unit]
+Description=Run clearnet crawl every 15 minutes
+
+[Timer]
+# When changing the interval, also update clearnet.interval_sec in the config and the CHANGELOG
+OnCalendar=*:00/15
+RandomizedDelaySec=30
+Persistent=false
+
+[Install]
+WantedBy=timers.target

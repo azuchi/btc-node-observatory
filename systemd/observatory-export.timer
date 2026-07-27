@@ -1,0 +1,11 @@
+[Unit]
+Description=Export daily aggregate and push to btc-node-data once a day
+
+[Timer]
+# After the onion crawl (starts 02:30) finishes, finalize the previous day and push
+OnCalendar=*-*-* 09:00:00 UTC
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

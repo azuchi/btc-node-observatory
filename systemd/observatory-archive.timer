@@ -1,0 +1,11 @@
+[Unit]
+Description=Archive last month's raw data and prune old observations monthly
+
+[Timer]
+# The 2nd of each month, after the daily export of the last day has been pushed
+OnCalendar=*-*-02 05:00:00 UTC
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

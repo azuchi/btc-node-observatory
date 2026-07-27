@@ -1,0 +1,107 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+$LOAD_PATH.unshift(File.expand_path('../lib', __dir__))
+
+require 'observatory'
+require 'optparse'
+require 'time'
+
+options = { config: nil }
+parser = OptionParser.new do |op|
+  op.banner = <<~BANNER
+    Usage: observatory [options] COMMAND [args]
+
+    Commands:
+      import [--file PATH]     Import addrman addresses (bitcoind RPC unless --file is given)
+      crawl clearnet|onion     Run a single snapshot
+      export [YYYY-MM-DD]      Write the daily aggregate JSON (defaults to yesterday UTC)
+      archive [YYYY-MM]        Dump a month of raw data to gzipped NDJSON (defaults to last month)
+      prune [--keep-days N]    Delete observations older than N days and VACUUM (archive first!)
+      geoip                    Resolve GeoIP for unresolved nodes
+      stats                    Show database overview
+  BANNER
+  op.on('-c', '--config PATH', 'Config file (default: config/observatory.yml)') { |v| options[:config] = v }
+  op.on('--file PATH', 'import: read from a JSON file') { |v| options[:file] = v }
+  op.on('--out DIR', 'export/archive: output directory') { |v| options[:out] = v }
+  op.on('--keep-days N', Integer, 'prune: retention in days (default: config retention.keep_days)') { |v| options[:keep_days] = v }
+end
+# permute so options may come after the subcommand (e.g. `export DATE --out DIR`)
+parser.parse!
+
+command = ARGV.shift
+config = Observatory::Config.load(options[:config])
+db = Observatory::Database.new(config.db_path)
+
+case command
+when 'import'
+  importer = Observatory::AddressImporter.new(db)
+  counts = if options[:file]
+             importer.import_from_file(options[:file])
+           else
+             importer.import_from_rpc(Observatory::RpcClient.from_config(config.bitcoind))
+           end
+  puts "imported: #{counts.sort_by { |_k, v| -v }.map { |k, v| "#{k}=#{v}" }.join(' ')}"
+
+when 'crawl'
+  network_class = ARGV.shift
+  unless %w[clearnet onion].include?(network_class)
+    abort 'crawl requires clearnet or onion'
+  end
+  summary = Observatory::Crawler.new(config, db).run(network_class.to_sym)
+  puts JSON.generate(summary)
+
+when 'export'
+  date = ARGV.shift || (Time.now.utc - 86_400).strftime('%Y-%m-%d')
+  path = Observatory::Exporter.new(config, db).write_daily(date, out_dir: options[:out])
+  if path
+    puts path
+  else
+    warn "no snapshots for #{date}"
+    exit 1
+  end
+
+when 'archive'
+  this_month_start = Time.strptime("#{Time.now.utc.strftime('%Y-%m')}-01 +0000", '%Y-%m-%d %z')
+  month = ARGV.shift || (this_month_start - 86_400).strftime('%Y-%m')
+  dir = Observatory::Archiver.new(config, db).write_month(month, out_dir: options[:out])
+  if dir
+    puts dir
+  else
+    warn "no snapshots for #{month}"
+    exit 1
+  end
+
+when 'prune'
+  keep_days = options[:keep_days] || config.retention['keep_days']
+  abort 'keep-days must be >= 2 (union_24h and daily export need recent observations)' if keep_days < 2
+  cutoff = Time.now.to_i - keep_days * 86_400
+  size_before = File.size(config.db_path)
+  deleted = db.prune_observations(before: cutoff)
+  db.vacuum
+  size_after = File.size(config.db_path)
+  mb = ->(bytes) { format('%.1fMB', bytes / 1024.0 / 1024.0) }
+  puts "pruned #{deleted} observations older than #{keep_days} days " \
+       "(db: #{mb.call(size_before)} -> #{mb.call(size_after)})"
+
+when 'geoip'
+  count = Observatory::Geo.from_config(config.geoip).resolve_all(db)
+  puts "resolved: #{count}"
+
+when 'stats'
+  %w[ipv4 ipv6 onion i2p cjdns].each do |network|
+    puts format('%-6s %d', network, db.node_count(network))
+  end
+  latest = db.db.execute(<<~SQL)
+    SELECT network_class, MAX(started_at), reachable, candidates FROM snapshots
+    WHERE finished_at IS NOT NULL GROUP BY network_class
+  SQL
+  latest.each do |(nc, ts, reachable, candidates)|
+    puts "#{nc}: last=#{Time.at(ts).utc.iso8601} reachable=#{reachable}/#{candidates} " \
+         "union_24h=#{db.union_24h(nc, at: ts)}"
+  end
+
+else
+  puts parser
+  exit 1
+end

@@ -1,0 +1,13 @@
+[Unit]
+Description=btc-node-observatory monthly raw archive + prune
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=observatory
+WorkingDirectory=/opt/btc-node-observatory
+# Set DATA_REPO_SLUG to upload the tarball to GitHub Releases (requires gh auth)
+#Environment=DATA_REPO_SLUG=OWNER/btc-node-data
+ExecStart=/bin/bash -lc 'scripts/archive_month.sh'
+# VACUUM of a large database can take a while
+TimeoutStartSec=2h

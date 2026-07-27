@@ -1,0 +1,14 @@
+[Unit]
+Description=btc-node-observatory onion crawl (single snapshot)
+After=network-online.target tor@observatory.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=observatory
+WorkingDirectory=/opt/btc-node-observatory
+ExecStart=/bin/bash -lc 'bundle exec exe/observatory crawl onion'
+LimitNOFILE=65536
+Nice=10
+# onion can take hours in the worst case where every probe times out
+TimeoutStartSec=6h

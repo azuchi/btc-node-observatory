@@ -1,0 +1,9 @@
+[Unit]
+Description=btc-node-observatory daily export + git push
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=observatory
+WorkingDirectory=/opt/btc-node-observatory
+ExecStart=/bin/bash -lc 'scripts/push_daily.sh'

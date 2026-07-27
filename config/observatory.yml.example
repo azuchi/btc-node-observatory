@@ -1,0 +1,61 @@
+# btc-node-observatory configuration file
+# Copy to config/observatory.yml.
+# Changing any "methodology parameter" (interval, timeouts, concurrency, candidate
+# limit, backoff) changes the params_hash. Whenever you change one, record it with
+# the date in the data repository's CHANGELOG.
+
+db_path: db/observatory.sqlite3
+
+# Announce a user agent identifiable from the network side (basic courtesy)
+user_agent: "/btc-node-observatory:0.1.0/"
+protocol_version: 70016
+
+clearnet:
+  interval_sec: 900        # 15 min. Keep in sync with the systemd timer interval
+  concurrency: 500         # Do not exceed the conntrack limit of the VPS/router
+  connect_timeout: 5
+  handshake_timeout: 5
+
+onion:
+  interval_sec: 86400      # once a day; circuit setup dominates, higher frequency is not feasible
+  concurrency: 50          # practical limit for a single Tor daemon is 50-100
+  connect_timeout: 30
+  handshake_timeout: 30
+  # Run a dedicated Tor instance. Do not share the Umbrel/LN Tor daemon.
+  socks5_host: 127.0.0.1
+  socks5_port: 9150
+
+# Mitigation against ADDR gossip pollution: candidate set cap
+candidate_limit: 100000
+
+backoff:
+  fail_streak_threshold: 30   # exponential backoff after 30 consecutive failures (never removed)
+  base_interval_sec: 900
+  max_exponent: 10            # backs off up to 900 * 2^10 ≈ 10.6 day intervals
+
+export:
+  top_n: 20                   # top-N entries for by_* maps in the daily JSON (rest goes to "other")
+  out_dir: ../btc-node-data   # path to the btc-node-data repository clone
+
+# Raw-data retention (NOT a methodology parameter; does not affect params_hash).
+# `observatory prune` deletes observations older than keep_days and VACUUMs the DB.
+# ALWAYS run `observatory archive` for the affected months first — after prune,
+# the archives are the only copy of the raw observations.
+retention:
+  keep_days: 60
+
+# Candidate address source (the Pi / Umbrel bitcoind).
+# Use direct RPC if reachable via Tailscale etc.; otherwise cron this on the Pi:
+#   bitcoin-cli getnodeaddresses 0 > addrs.json
+# then rsync it to the VPS and run `observatory import --file addrs.json`.
+bitcoind:
+  rpc_url: http://umbrel.local:8332
+  rpc_user: bitcoin
+  rpc_password: CHANGE_ME
+  # cookie_path: /path/to/.cookie   # for cookie authentication
+
+# GeoIP (optional). Fetch GeoLite2 with a free MaxMind license key.
+# Not applied to onion (geo stays NULL).
+# geoip:
+#   country_db: /var/lib/GeoIP/GeoLite2-Country.mmdb
+#   asn_db: /var/lib/GeoIP/GeoLite2-ASN.mmdb
