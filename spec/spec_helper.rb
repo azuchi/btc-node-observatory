@@ -22,6 +22,15 @@ module SpecHelpers
           ).to_pkt)
           client.write(Bitcoin::Message::VerAck.new.to_pkt)
           read_bitcoin_message(client) rescue nil # the client's verack
+        when :no_relay
+          # An old node omitting the optional BIP-37 relay byte
+          read_bitcoin_message(client)
+          payload = Bitcoin::Message::Version.new(
+            user_agent: user_agent, start_height: start_height
+          ).to_payload[0..-2]
+          client.write(build_pkt('version', payload))
+          client.write(Bitcoin::Message::VerAck.new.to_pkt)
+          read_bitcoin_message(client) rescue nil
         when :silent
           sleep 60
         when :garbage
@@ -35,6 +44,11 @@ module SpecHelpers
     @fake_servers ||= []
     @fake_servers << [server, thread]
     port
+  end
+
+  def build_pkt(command, payload)
+    Bitcoin.chain_params.magic_head.htb + [command].pack('a12') +
+      [payload.bytesize].pack('V') + Bitcoin.double_sha256(payload)[0, 4] + payload
   end
 
   def read_bitcoin_message(sock)

@@ -54,4 +54,21 @@ RSpec.describe Observatory::Prober do
     expect(result.success).to be false
     expect(result.fail_reason).to eq('handshake_error')
   end
+
+  it 'succeeds against peers that omit the optional relay byte (bitcoinrb parse workaround)' do
+    port = start_fake_node(behavior: :no_relay, user_agent: '/OldNode:0.8.0/')
+    result = probe(port)
+    expect(result.success).to be true
+    expect(result.user_agent).to eq('/OldNode:0.8.0/')
+  end
+
+  it 'records an unexpected parser exception as handshake_error instead of raising' do
+    # One misbehaving peer must not be able to abort the whole snapshot
+    allow(Bitcoin::Message::Version).to receive(:parse_from_payload)
+      .and_raise(NoMethodError, "undefined method 'zero?' for nil")
+    port = start_fake_node
+    result = probe(port)
+    expect(result.success).to be false
+    expect(result.fail_reason).to eq('handshake_error')
+  end
 end

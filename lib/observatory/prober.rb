@@ -58,6 +58,12 @@ module Observatory
       Result.new(success: false, fail_reason: socks_fail_reason(e))
     rescue HandshakeError, SystemCallError, IOError, EOFError, ArgumentError
       Result.new(success: false, fail_reason: 'handshake_error')
+    rescue StandardError => e
+      # A misbehaving peer must never be able to kill the whole snapshot
+      # (an uncaught exception would propagate through barrier.wait and abort
+      # the crawl): record anything unexpected as handshake_error.
+      warn "probe #{address}:#{port}: #{e.class}: #{e.message}"
+      Result.new(success: false, fail_reason: 'handshake_error')
     end
 
     private
@@ -79,7 +85,7 @@ module Observatory
         command, payload = read_message(sock)
         case command
         when 'version'
-          remote_version = Bitcoin::Message::Version.parse_from_payload(payload)
+          remote_version = parse_version(payload)
           # Answering the peer's version with a verack is basic courtesy
           # (Core sends its verack without waiting for ours)
           sock.write(Bitcoin::Message::VerAck.new.to_pkt)
@@ -89,6 +95,16 @@ module Observatory
         # Skip everything else (wtxidrelay / sendaddrv2 / ping etc.)
       end
       remote_version
+    end
+
+    # Malformed version payloads from arbitrary peers are expected in the wild;
+    # classify any parse failure as handshake_error rather than a crash.
+    # (Requires bitcoinrb >= 1.12.1, which accepts the optional BIP-37 relay
+    # byte being absent.)
+    def parse_version(payload)
+      Bitcoin::Message::Version.parse_from_payload(payload)
+    rescue StandardError
+      raise HandshakeError, 'unparseable version message'
     end
 
     def build_version

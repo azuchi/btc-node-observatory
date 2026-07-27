@@ -11,34 +11,30 @@ GEM
       thor (>= 1.1.0)
     bip-schnorr (0.7.0)
       ecdsa_ext (~> 0.5.0)
-    bitcoinrb (1.12.0)
+    bitcoinrb (1.12.1)
       base32 (>= 0.3.4)
       base64 (~> 0.2.0)
       bech32 (>= 1.5.0)
       bip-schnorr (>= 0.7.0)
-      daemon-spawn
+      dnsruby (= 1.73.0)
       ecdsa_ext (~> 0.5.1)
-      eventmachine
-      eventmachine_httpserver
-      iniparse
       logger
       merkle (= 0.3.0)
       murmurhash3 (~> 0.1.7)
-      observer (~> 0.1.2)
       secp256k1rb (= 0.1.1)
       siphash
-      thor
     console (1.37.0)
       fiber-annotation
       fiber-local (~> 1.1)
       json
-    daemon-spawn (0.4.2)
     diff-lcs (1.6.2)
+    dnsruby (1.73.0)
+      base64 (>= 0.2)
+      logger (~> 1.6)
+      simpleidn (~> 0.2.1)
     ecdsa (1.2.0)
     ecdsa_ext (0.5.1)
       ecdsa (~> 1.2.0)
-    eventmachine (1.2.7)
-    eventmachine_httpserver (0.2.1)
     ffi (1.17.4-aarch64-linux-gnu)
     ffi (1.17.4-aarch64-linux-musl)
     ffi (1.17.4-arm-linux-gnu)
@@ -53,14 +49,12 @@ GEM
     fiber-local (1.1.0)
       fiber-storage
     fiber-storage (1.0.1)
-    iniparse (1.5.0)
     io-event (1.19.3)
     json (2.21.1)
     logger (1.7.0)
     maxmind-db (1.4.0)
     merkle (0.3.0)
     murmurhash3 (0.1.7)
-    observer (0.1.2)
     rake (13.4.2)
     rspec (3.13.2)
       rspec-core (~> 3.13.0)
@@ -77,6 +71,7 @@ GEM
     rspec-support (3.13.7)
     secp256k1rb (0.1.1)
       ffi (>= 1.16.3)
+    simpleidn (0.2.3)
     siphash (0.0.1)
     sqlite3 (2.9.5-aarch64-linux-gnu)
     sqlite3 (2.9.5-aarch64-linux-musl)
@@ -104,7 +99,7 @@ PLATFORMS
 
 DEPENDENCIES
   async (~> 2.0)
-  bitcoinrb (~> 1.0)
+  bitcoinrb (~> 1.12, >= 1.12.1)
   maxmind-db (~> 1.2)
   rake
   rspec (~> 3.0)
@@ -116,14 +111,12 @@ CHECKSUMS
   base64 (0.2.0) sha256=0f25e9b21a02a0cc0cea8ef92b2041035d39350946e8789c562b2d1a3da01507
   bech32 (1.5.0) sha256=04520e3bd899a8d9d27e698eb4fc0e9f9292b42d13628d9a1814b3b8a9a68a8a
   bip-schnorr (0.7.0) sha256=1a5db8ba06885319e67e3db12f3a6f5e7b3fb132b343985ff1cc1478d73dd1f1
-  bitcoinrb (1.12.0) sha256=25fa4933206fe77f18652e73ae7c8cbe87f58c98bab656120c4acf87f689fd4a
+  bitcoinrb (1.12.1) sha256=77bd6accd1a081301ed453b1f9c6e3c523b89c6fd2a1316201e778f250ecf6fc
   console (1.37.0) sha256=8093b286c2595a063849c098594fee5155ecc7967d36f3aa8cbe7569c8f3efd7
-  daemon-spawn (0.4.2) sha256=c3a106fa8832e4f8d5f3d541b6b52166bcf313b35dbbe1565d919b1bfe8dc1fb
   diff-lcs (1.6.2) sha256=9ae0d2cba7d4df3075fe8cd8602a8604993efc0dfa934cff568969efb1909962
+  dnsruby (1.73.0) sha256=39c00478371e7012fa9421dc0557a9fb9f339a30121fb62e75c5aacb79d1f11a
   ecdsa (1.2.0) sha256=b8f7c9541b6c587cbe37e705a1b76be6dc1e85336aa23ac3cf2f07b038bcec55
   ecdsa_ext (0.5.1) sha256=d8ee8bfb6f4519188fe65898fe0b0c735962a5954f31702d0f84ffe12b99fbc6
-  eventmachine (1.2.7) sha256=994016e42aa041477ba9cff45cbe50de2047f25dd418eba003e84f0d16560972
-  eventmachine_httpserver (0.2.1) sha256=5db5e8a23754204d43592e5fcc2160457c57c870babe6307c4e61fc95019b809
   ffi (1.17.4-aarch64-linux-gnu) sha256=b208f06f91ffd8f5e1193da3cae3d2ccfc27fc36fba577baf698d26d91c080df
   ffi (1.17.4-aarch64-linux-musl) sha256=9286b7a615f2676245283aef0a0a3b475ae3aae2bb5448baace630bb77b91f39
   ffi (1.17.4-arm-linux-gnu) sha256=d6dbddf7cb77bf955411af5f187a65b8cd378cb003c15c05697f5feee1cb1564
@@ -137,14 +130,12 @@ CHECKSUMS
   fiber-annotation (0.2.0) sha256=7abfadf1d119f508867d4103bf231c0354d019cc39a5738945dec2edadaf6c03
   fiber-local (1.1.0) sha256=c885f94f210fb9b05737de65d511136ea602e00c5105953748aa0f8793489f06
   fiber-storage (1.0.1) sha256=f48e5b6d8b0be96dac486332b55cee82240057065dc761c1ea692b2e719240e1
-  iniparse (1.5.0) sha256=36a165e98d8a250b7631c4a7f9afba32af78f089970cd6446a39771189c761f1
   io-event (1.19.3) sha256=0fe24f0fe334ad39cf61a290131c54f8848184c0d166cea86ffae2d6548339d3
   json (2.21.1) sha256=13a43df75d95641443f5702dff350f237164a9d811ff0f2c2800d4d980220583
   logger (1.7.0) sha256=196edec7cc44b66cfb40f9755ce11b392f21f7967696af15d274dde7edff0203
   maxmind-db (1.4.0) sha256=0765c79329847fe92687a7f215a6bae843121a09ac7c8d8d9930856bcb849052
   merkle (0.3.0) sha256=c80b5abff92253d09e2c8e234dfe2ededdd7337eb438ba0ebb0bb5ac9f810128
   murmurhash3 (0.1.7) sha256=370a2ce2e9ab0711e51554e530b5f63956927a6554a296855f42a1a4a5ed0936
-  observer (0.1.2) sha256=d8a3107131ba661138d748e7be3dbafc0d82e732fffba9fccb3d7829880950ac
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
   rspec (3.13.2) sha256=206284a08ad798e61f86d7ca3e376718d52c0bc944626b2349266f239f820587
   rspec-core (3.13.6) sha256=a8823c6411667b60a8bca135364351dda34cd55e44ff94c4be4633b37d828b2d
@@ -152,6 +143,7 @@ CHECKSUMS
   rspec-mocks (3.13.8) sha256=086ad3d3d17533f4237643de0b5c42f04b66348c28bf6b9c2d3f4a3b01af1d47
   rspec-support (3.13.7) sha256=0640e5570872aafefd79867901deeeeb40b0c9875a36b983d85f54fb7381c47c
   secp256k1rb (0.1.1) sha256=1d350ef2ce66220bd21cf8f941e429a92a98ea4d8cdd1e667f65c0e8d67f99d1
+  simpleidn (0.2.3) sha256=08ce96f03fa1605286be22651ba0fc9c0b2d6272c9b27a260bc88be05b0d2c29
   siphash (0.0.1) sha256=407ef07756b0cf9bdbd37fd27b962d2cae64dfdd038f697bb67c57c0d49a45f4
   sqlite3 (2.9.5-aarch64-linux-gnu) sha256=78075b6337d3d182c6d2b4691049ed45cd220826160c9ea18946bf6a1de200dc
   sqlite3 (2.9.5-aarch64-linux-musl) sha256=18c801185deb4adc01ddb281e8f672a39e3d1729979ca91e39439cd3eac0402d
