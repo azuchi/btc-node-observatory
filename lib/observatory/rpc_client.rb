@@ -41,7 +41,23 @@ module Observatory
                                                   read_timeout: 120, open_timeout: 10) do |http|
         http.request(req)
       end
-      body = JSON.parse(res.body)
+      # bitcoind signals auth/allowlist failures with an empty body (401/403),
+      # and RPC-level errors with a JSON body on HTTP 500 — so parse the body
+      # when present and fall back to an HTTP-status message when it is not.
+      if res.body.nil? || res.body.empty?
+        hint = case res.code
+               when '401' then ' — authentication failed (check rpc_user/rpc_password or cookie_path)'
+               when '403' then " — rejected by bitcoind's rpcallowip (allow this host's IP)"
+               else ''
+               end
+        raise Error, "empty RPC response (HTTP #{res.code})#{hint}"
+      end
+      body = begin
+        JSON.parse(res.body)
+      rescue JSON::ParserError
+        raise Error, "non-JSON RPC response (HTTP #{res.code}): #{res.body[0, 200]} " \
+                     '— is rpc_url really the bitcoind RPC endpoint?'
+      end
       raise Error, "RPC error: #{body['error']}" if body['error']
 
       body['result']
