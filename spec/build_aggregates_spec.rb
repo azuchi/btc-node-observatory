@@ -8,6 +8,10 @@ require 'open3'
 RSpec.describe 'btc-node-data/scripts/build_aggregates.rb' do
   let(:script) { File.expand_path('../../btc-node-data/scripts/build_aggregates.rb', __dir__) }
 
+  before do
+    skip 'btc-node-data is not checked out next to this repository' unless File.exist?(script)
+  end
+
   def write_daily(repo, date, snapshots)
     year, month, = date.split('-')
     dir = File.join(repo, 'daily', year, month)

@@ -1,0 +1,33 @@
+# btc-node-observatory: run the RSpec suite on push / PR.
+# The tests need no network access (handshakes run against local fake nodes).
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  rspec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: btc-node-observatory
+
+      # The aggregates spec exercises the sibling data repository's build script.
+      # If that repo cannot be checked out, the spec skips itself gracefully.
+      - uses: actions/checkout@v5
+        continue-on-error: true
+        with:
+          repository: azuchi/btc-node-data
+          path: btc-node-data
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: btc-node-observatory
+          bundler-cache: true   # installs the bundle and caches it (uses .ruby-version)
+
+      - run: bundle exec rspec
+        working-directory: btc-node-observatory
