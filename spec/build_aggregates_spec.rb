@@ -20,9 +20,12 @@ RSpec.describe 'btc-node-data/scripts/build_aggregates.rb' do
   end
 
   def snapshot(ts, network_class, inst, union)
-    { 'ts' => ts, 'network_class' => network_class, 'candidates' => 1000,
-      'instantaneous' => inst, 'union_24h' => union, 'by_network' => {},
-      'by_user_agent' => {}, 'crawler_ver' => '0.1.0', 'params_hash' => 'abcd1234' }
+    base = { 'ts' => ts, 'network_class' => network_class, 'candidates' => 1000,
+             'instantaneous' => inst, 'union_24h' => union, 'by_network' => {},
+             'by_user_agent' => { '/Satoshi:30.0.0/' => inst }, 'crawler_ver' => '0.1.0',
+             'params_hash' => 'abcd1234' }
+    base['by_country'] = { 'US' => inst / 2, 'DE' => inst / 4 } if network_class == 'clearnet'
+    base
   end
 
   it 'builds per-granularity aggregates from daily files (clearnet/onion kept separate)' do
@@ -65,6 +68,15 @@ RSpec.describe 'btc-node-data/scripts/build_aggregates.rb' do
       %w[month quarter year].each do |g|
         expect(File).to exist(File.join(repo, 'aggregates', "#{g}.json"))
       end
+
+      # latest.json: newest snapshot per network class with full breakdowns
+      latest = JSON.parse(File.read(File.join(repo, 'aggregates', 'latest.json')))
+      expect(latest['date']).to eq('2026-07-22')
+      clearnet = latest['networks']['clearnet']
+      expect(clearnet['instantaneous']).to eq(7102) # last snapshot of the last day
+      expect(clearnet['by_country']).to eq({ 'US' => 3551, 'DE' => 1775 })
+      expect(clearnet['by_user_agent']).to eq({ '/Satoshi:30.0.0/' => 7102 })
+      expect(latest['networks']['onion']).not_to have_key('by_country')
     end
   end
 end
