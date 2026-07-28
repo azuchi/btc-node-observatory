@@ -6,4 +6,7 @@ After=network-online.target
 Type=oneshot
 User=observatory
 WorkingDirectory=/opt/btc-node-observatory
+# Resolve country/ASN for newly seen nodes first; skipped harmlessly when
+# geoip is not configured, and failures never block the export
+ExecStartPre=-/bin/bash -lc 'bundle exec exe/observatory geoip'
 ExecStart=/bin/bash -lc 'scripts/push_daily.sh'
