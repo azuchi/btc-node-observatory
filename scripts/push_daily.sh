@@ -20,6 +20,9 @@ if git diff --cached --quiet; then
   exit 0
 fi
 git commit -m "data: ${DATE}"
+# The aggregates workflow pushes its own commit to main after every data push,
+# so the clone is always one commit behind by the next day: sync before pushing
+git pull --rebase origin main
 git push origin HEAD
 # Also push to the mirror (Codeberg / GitLab). Configure a remote named 'mirror'.
 git push mirror HEAD || echo "WARN: mirror push failed (continuing)"
