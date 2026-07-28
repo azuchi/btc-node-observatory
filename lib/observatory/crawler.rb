@@ -21,6 +21,8 @@ module Observatory
       backoff = @config.backoff
       now = Time.now.to_i
 
+      preflight_socks!(params) if network_class.to_s == 'onion'
+
       candidates = @db.candidates(network_class,
                                   now: now,
                                   limit: @config.candidate_limit,
@@ -57,6 +59,19 @@ module Observatory
     end
 
     private
+
+    # A dead SOCKS proxy would record an all-zero snapshot ("0 onion nodes")
+    # that is indistinguishable from a real measurement and would pollute the
+    # series. Distinguish "Tor is down" from "nodes are down" by refusing to
+    # take a snapshot at all.
+    def preflight_socks!(params)
+      host = params['socks5_host']
+      port = params['socks5_port']
+      ::Socket.tcp(host, port, connect_timeout: 5).close
+    rescue SystemCallError, IO::TimeoutError => e
+      raise "SOCKS5 proxy #{host}:#{port} is not reachable (#{e.class}); " \
+            'aborting the onion snapshot (is the dedicated Tor running?)'
+    end
 
     def build_prober(network_class, params)
       opts = {

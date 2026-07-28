@@ -31,4 +31,15 @@ RSpec.describe Observatory::Crawler do
     expect(observations[1][0]).to eq(0)
     expect(observations[1][1]).to eq('handshake_error')
   end
+
+  it 'aborts an onion snapshot when the SOCKS5 proxy is unreachable (no fake zero measurement)' do
+    db = build_db
+    db.upsert_node(address: 'abc.onion', port: 8333, network: 'onion', seen_at: Time.now.to_i)
+    allow(::Socket).to receive(:tcp).and_raise(Errno::ECONNREFUSED)
+
+    crawler = described_class.new(build_config, db, logger: Logger.new(File::NULL))
+    expect { crawler.run(:onion) }.to raise_error(/SOCKS5 proxy .* not reachable/)
+    # No snapshot row must be recorded
+    expect(db.db.get_first_value('SELECT COUNT(*) FROM snapshots')).to eq(0)
+  end
 end
