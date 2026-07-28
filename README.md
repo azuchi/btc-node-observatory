@@ -88,7 +88,8 @@ Whenever a methodology parameter changes, record it in `CHANGELOG.md` with the d
 ## Dashboard
 
 Push `../btc-node-dashboard` to GitHub and enable GitHub Pages.
-Replace `DATA_BASE` in `app.js` and `OWNER` in the HTML with the real repository.
+`DATA_BASE` in `app.js` and the links in the HTML point at `azuchi/btc-node-data`;
+replace them when forking.
 **Do not use a custom domain** (keep serving from `*.github.io`).
 
 ## Implementation phases

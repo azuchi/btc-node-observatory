@@ -4,7 +4,7 @@
 # Meant to run monthly (systemd/observatory-archive.timer).
 #
 # Env:
-#   DATA_REPO_SLUG  e.g. "OWNER/btc-node-data" — if set and `gh` is available,
+#   DATA_REPO_SLUG  e.g. "azuchi/btc-node-data" — if set and `gh` is available,
 #                   the tarball is uploaded as release "raw-YYYY-MM".
 #   ARCHIVE_DIR     where archives are written (default: ./archives)
 set -euo pipefail
