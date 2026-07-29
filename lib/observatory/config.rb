@@ -40,6 +40,16 @@ module Observatory
       'retention' => {
         'keep_days' => 60               # `prune` deletes observations older than this (archive first!)
       },
+      # Recursive getaddr discovery (`harvest`). Collects candidate addresses only;
+      # it never measures reachability, so it does not affect params_hash.
+      'harvest' => {
+        'concurrency' => 30,            # far lighter than a measurement round (home-network friendly)
+        'connect_timeout' => 5,
+        'getaddr_timeout' => 25,        # peers reply within seconds, then keep the connection open
+        'peers_per_round' => 200,
+        'max_rounds' => 5,
+        'max_addrs_per_peer' => 5000
+      },
       'bitcoind' => nil,                # { 'rpc_url' =>, 'rpc_user' =>, 'rpc_password' => } or { 'cookie_path' => }
       'geoip' => nil                    # { 'country_db' =>, 'asn_db' => }
     }.freeze
@@ -66,6 +76,7 @@ module Observatory
     def backoff = @raw['backoff']
     def export = @raw['export']
     def retention = @raw['retention']
+    def harvest = @raw['harvest']
     def bitcoind = @raw['bitcoind']
     def geoip = @raw['geoip']
 

@@ -37,6 +37,18 @@ export:
   top_n: 20                   # top-N entries for by_* maps in the daily JSON (rest goes to "other")
   out_dir: ../btc-node-data   # path to the btc-node-data repository clone
 
+# Recursive getaddr discovery (`observatory harvest`).
+# Collects candidate addresses only — it never measures reachability, so it does
+# not affect params_hash. Light enough to run on a home machine; the output is
+# fed to the measurement host with `import --file`.
+harvest:
+  concurrency: 30
+  connect_timeout: 5
+  getaddr_timeout: 25         # peers answer within seconds, then hold the connection open
+  peers_per_round: 200
+  max_rounds: 5
+  max_addrs_per_peer: 5000
+
 # Raw-data retention (NOT a methodology parameter; does not affect params_hash).
 # `observatory prune` deletes observations older than keep_days and VACUUMs the DB.
 # ALWAYS run `observatory archive` for the affected months first — after prune,

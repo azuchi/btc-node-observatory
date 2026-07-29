@@ -16,6 +16,7 @@ parser = OptionParser.new do |op|
       import [--file PATH]     Import addrman addresses (bitcoind RPC unless --file is given)
       crawl clearnet|onion     Run a single snapshot
       export [YYYY-MM-DD]      Write the daily aggregate JSON (defaults to yesterday UTC)
+      harvest [--out PATH]     Recursive getaddr discovery; writes an import-compatible JSON
       archive [YYYY-MM]        Dump a month of raw data to gzipped NDJSON (defaults to last month)
       prune [--keep-days N]    Delete observations older than N days and VACUUM (archive first!)
       geoip                    Resolve GeoIP for unresolved nodes
@@ -60,6 +61,31 @@ when 'export'
     warn "no snapshots for #{date}"
     exit 1
   end
+
+when 'harvest'
+  # Seeds: nodes we already know are reachable, else the DNS seeds.
+  seeds = db.db.execute(<<~SQL)
+    SELECT address, port, network FROM nodes
+    WHERE network IN ('ipv4', 'ipv6') AND last_success IS NOT NULL
+    ORDER BY last_success DESC LIMIT 500
+  SQL
+  if seeds.empty?
+    require 'resolv'
+    warn 'no known reachable nodes; falling back to DNS seeds'
+    seeds = Bitcoin.chain_params.dns_seeds.flat_map do |host|
+      Resolv::DNS.open { |dns| dns.getaddresses(host).map(&:to_s) }
+    rescue StandardError
+      []
+    end.uniq.first(200).map { |ip| [ip, Bitcoin.chain_params.default_port, 'ipv4'] }
+  end
+  abort 'no seeds available' if seeds.empty?
+
+  result = Observatory::Harvester.new(config).run(seeds)
+  out = options[:out] || 'harvest.json'
+  Observatory::Harvester.new(config).write(result, out)
+  by_network = result.addresses.group_by { |e| e['network'] }.transform_values(&:size)
+  puts JSON.generate({ file: out, addresses: result.addresses.size, rounds: result.rounds,
+                       asked: result.asked, answered: result.answered, by_network: by_network })
 
 when 'archive'
   this_month_start = Time.strptime("#{Time.now.utc.strftime('%Y-%m')}-01 +0000", '%Y-%m-%d %z')

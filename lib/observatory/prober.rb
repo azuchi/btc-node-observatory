@@ -76,8 +76,11 @@ module Observatory
       end
     end
 
+    # @param announce_addrv2 [Boolean] send sendaddrv2 before our verack, so the
+    #   peer may reply with BIP-155 addresses. It MUST go before verack — Core
+    #   disconnects peers that send it afterwards.
     # @return [Bitcoin::Message::Version] the peer's version message
-    def handshake(sock)
+    def handshake(sock, announce_addrv2: false)
       sock.write(build_version.to_pkt)
       remote_version = nil
       verack = false
@@ -86,6 +89,9 @@ module Observatory
         case command
         when 'version'
           remote_version = parse_version(payload)
+          if announce_addrv2 && remote_version.version >= 70_016
+            sock.write(Bitcoin::Message::SendAddrV2.new.to_pkt)
+          end
           # Answering the peer's version with a verack is basic courtesy
           # (Core sends its verack without waiting for ours)
           sock.write(Bitcoin::Message::VerAck.new.to_pkt)

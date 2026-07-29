@@ -61,10 +61,34 @@ of the data repository when `DATA_REPO_SLUG` is set, then frees disk space with
 
 Run a **dedicated Tor instance** for the onion crawl (do not share the Umbrel/LN Tor daemon).
 
+### Widening the candidate set (optional)
+
+A single node's addrman is capped at roughly 82k entries, so it cannot see the
+whole address space. `observatory harvest` performs a recursive getaddr crawl —
+it asks reachable peers for their address books and writes the union as an
+import-compatible JSON. It only **collects candidates**; reachability is still
+measured by `crawl`, so running it does not change what is measured.
+
+It is light enough to run elsewhere (tens of concurrent connections, once a day),
+e.g. on a machine at home, feeding the result to the measurement host:
+
+```sh
+# on the collecting machine
+bundle exec exe/observatory harvest --out harvest.json
+scp harvest.json vps:/tmp/
+# on the measurement host
+bundle exec exe/observatory import --file /tmp/harvest.json
+```
+
+**Adding harvested addresses widens the candidate source, which is a methodology
+change**: record it in the data repository's CHANGELOG with the date before
+starting, so the series break is explicit.
+
 ### CLI
 
 ```
 observatory import [--file PATH]   Import addrman addresses (bitcoind RPC by default)
+observatory harvest [--out PATH]   Recursive getaddr discovery; writes an import-compatible JSON
 observatory crawl clearnet|onion   Run a single snapshot
 observatory export [YYYY-MM-DD]    Write the daily aggregate JSON into the data repository
 observatory archive [YYYY-MM]      Dump a month of raw data to gzipped NDJSON (for GitHub Releases)

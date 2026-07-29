@@ -18,6 +18,7 @@ module Observatory
   autoload :Socks5,          'observatory/socks5'
   autoload :Prober,          'observatory/prober'
   autoload :Crawler,         'observatory/crawler'
+  autoload :Harvester,       'observatory/harvester'
   autoload :Exporter,        'observatory/exporter'
   autoload :Archiver,        'observatory/archiver'
   autoload :Geo,             'observatory/geo'
