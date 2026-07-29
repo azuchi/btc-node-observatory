@@ -45,6 +45,10 @@ RSpec.describe Observatory::Exporter do
     expect(data['date']).to eq(date)
     expect(data['snapshots'].size).to eq(2)
 
+    # Observer block: addrman counts at export time (aggregates only, no raw addresses)
+    expect(data['observer']['addrman']).to eq({ 'ipv4' => 2, 'ipv6' => 1, 'onion' => 1 })
+    expect(data['observer']['backed_off']).to eq({})
+
     clearnet = data['snapshots'].find { |s| s['network_class'] == 'clearnet' }
     expect(clearnet['candidates']).to eq(3)
     expect(clearnet['instantaneous']).to eq(2)

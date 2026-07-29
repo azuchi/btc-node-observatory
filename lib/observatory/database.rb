@@ -113,6 +113,18 @@ module Observatory
       end
     end
 
+    # Known addresses per network (the observer's addrman mirror).
+    def node_counts_by_network
+      @db.execute('SELECT network, COUNT(*) FROM nodes GROUP BY network').to_h
+    end
+
+    # Addresses currently in exponential backoff, per network.
+    def backed_off_counts(threshold)
+      @db.execute(<<~SQL, [threshold]).to_h
+        SELECT network, COUNT(*) FROM nodes WHERE fail_streak >= ? GROUP BY network
+      SQL
+    end
+
     # --- snapshots / observations -----------------------------------------
 
     def create_snapshot(network_class:, started_at:, candidates:, crawler_ver:, params_hash:)

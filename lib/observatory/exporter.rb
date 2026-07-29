@@ -24,6 +24,7 @@ module Observatory
       top_n = @config.export['top_n']
       {
         'date' => date_str,
+        'observer' => observer_entry,
         'snapshots' => snapshots.map { |s| snapshot_entry(s, top_n) }
       }
     end
@@ -44,6 +45,16 @@ module Observatory
     end
 
     private
+
+    # The observer's own view: addrman-derived address counts at export time.
+    # Aggregate counts only — raw addresses are never published. This describes
+    # the vantage point, not the network itself.
+    def observer_entry
+      {
+        'addrman' => @db.node_counts_by_network,
+        'backed_off' => @db.backed_off_counts(@config.backoff['fail_streak_threshold'])
+      }
+    end
 
     def snapshot_entry(snapshot, top_n)
       id = snapshot[:id]

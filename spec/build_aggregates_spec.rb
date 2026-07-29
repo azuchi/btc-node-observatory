@@ -16,7 +16,11 @@ RSpec.describe 'btc-node-data/scripts/build_aggregates.rb' do
     year, month, = date.split('-')
     dir = File.join(repo, 'daily', year, month)
     FileUtils.mkdir_p(dir)
-    File.write(File.join(dir, "#{date}.json"), JSON.generate({ 'date' => date, 'snapshots' => snapshots }))
+    File.write(File.join(dir, "#{date}.json"),
+               JSON.generate({ 'date' => date,
+                               'observer' => { 'addrman' => { 'ipv4' => 40_000, 'onion' => 18_000 },
+                                               'backed_off' => { 'ipv4' => 30_000 } },
+                               'snapshots' => snapshots }))
   end
 
   def snapshot(ts, network_class, inst, union)
@@ -73,8 +77,10 @@ RSpec.describe 'btc-node-data/scripts/build_aggregates.rb' do
       # latest.json: newest snapshot per network class with full breakdowns
       latest = JSON.parse(File.read(File.join(repo, 'aggregates', 'latest.json')))
       expect(latest['date']).to eq('2026-07-22')
+      expect(latest['observer']['addrman']).to eq({ 'ipv4' => 40_000, 'onion' => 18_000 })
       clearnet = latest['networks']['clearnet']
       expect(clearnet['instantaneous']).to eq(7102) # last snapshot of the last day
+      expect(clearnet['candidates']).to eq(1000)
       expect(clearnet['by_country']).to eq({ 'US' => 3551, 'DE' => 1775 })
       expect(clearnet['by_network']).to eq({ 'ipv4' => 7002, 'ipv6' => 100 })
       expect(clearnet['by_user_agent']).to eq({ '/Satoshi:30.0.0/' => 7102 })
