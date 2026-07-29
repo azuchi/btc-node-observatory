@@ -1,0 +1,11 @@
+[Unit]
+Description=Discover additional candidate addresses once a day
+
+[Timer]
+# Between the onion crawl (02:30) and the daily export (09:00)
+OnCalendar=*-*-* 05:30:00 UTC
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

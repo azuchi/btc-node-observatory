@@ -28,6 +28,11 @@ module Observatory
         'socks5_port' => 9050
       },
       'candidate_limit' => 100_000,     # candidate set cap against ADDR gossip pollution
+      # Where candidate addresses come from. Part of the methodology, so it is
+      # covered by params_hash: widening it changes what "reachable" is measured
+      # against. 'addrman' = the observer node's address book, 'harvest' =
+      # recursive getaddr discovery (see the harvest section below).
+      'candidate_sources' => ['addrman'],
       'backoff' => {
         'fail_streak_threshold' => 30,  # exponential backoff beyond this many consecutive failures
         'base_interval_sec' => 900,
@@ -73,6 +78,7 @@ module Observatory
     def clearnet = @raw['clearnet']
     def onion = @raw['onion']
     def candidate_limit = @raw['candidate_limit']
+    def candidate_sources = Array(@raw['candidate_sources']).map(&:to_s).sort
     def backoff = @raw['backoff']
     def export = @raw['export']
     def retention = @raw['retention']
@@ -95,6 +101,7 @@ module Observatory
         'connect_timeout' => np['connect_timeout'],
         'handshake_timeout' => np['handshake_timeout'],
         'candidate_limit' => candidate_limit,
+        'candidate_sources' => candidate_sources,
         'fail_streak_threshold' => backoff['fail_streak_threshold'],
         'base_interval_sec' => backoff['base_interval_sec'],
         'max_exponent' => backoff['max_exponent'],

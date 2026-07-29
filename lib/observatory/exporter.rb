@@ -51,6 +51,7 @@ module Observatory
     # the vantage point, not the network itself.
     def observer_entry
       {
+        'candidate_sources' => @config.candidate_sources,
         'addrman' => @db.node_counts_by_network,
         'backed_off' => @db.backed_off_counts(@config.backoff['fail_streak_threshold'])
       }

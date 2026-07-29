@@ -30,6 +30,18 @@ RSpec.describe Observatory::Config do
       expect(a).not_to eq(b)
     end
 
+    it 'changes when the candidate source is widened' do
+      a = build_config.params_hash(:clearnet)
+      b = build_config({ 'candidate_sources' => %w[addrman harvest] }).params_hash(:clearnet)
+      expect(a).not_to eq(b)
+    end
+
+    it 'ignores the order candidate sources are listed in' do
+      a = build_config({ 'candidate_sources' => %w[addrman harvest] }).params_hash(:clearnet)
+      b = build_config({ 'candidate_sources' => %w[harvest addrman] }).params_hash(:clearnet)
+      expect(a).to eq(b)
+    end
+
     it 'does not change with user_agent (it does not affect the methodology)' do
       a = build_config.params_hash(:clearnet)
       b = build_config({ 'user_agent' => '/other:1.0/' }).params_hash(:clearnet)

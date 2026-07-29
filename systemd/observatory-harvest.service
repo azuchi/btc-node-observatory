@@ -1,0 +1,13 @@
+[Unit]
+Description=btc-node-observatory recursive getaddr discovery + import
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=observatory
+WorkingDirectory=/opt/btc-node-observatory
+ExecStart=/bin/bash -lc 'scripts/harvest_import.sh'
+# Rounds are bounded by harvest.max_rounds, but peers can stall
+TimeoutStartSec=2h
+Nice=10

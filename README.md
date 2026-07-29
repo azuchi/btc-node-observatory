@@ -51,6 +51,7 @@ sudo systemctl enable --now observatory-clearnet.timer   # every 15 minutes
 sudo systemctl enable --now observatory-onion.timer      # once a day (requires a dedicated Tor)
 sudo systemctl enable --now observatory-export.timer     # daily export + push
 sudo systemctl enable --now observatory-archive.timer    # monthly raw archive + prune
+sudo systemctl enable --now observatory-harvest.timer    # daily getaddr discovery (see below)
 ```
 
 The observations table grows by roughly 50–150 MB/day, so on a small disk the
@@ -61,28 +62,38 @@ of the data repository when `DATA_REPO_SLUG` is set, then frees disk space with
 
 Run a **dedicated Tor instance** for the onion crawl (do not share the Umbrel/LN Tor daemon).
 
-### Widening the candidate set (optional)
+### Widening the candidate set
 
 A single node's addrman is capped at roughly 82k entries, so it cannot see the
 whole address space. `observatory harvest` performs a recursive getaddr crawl —
-it asks reachable peers for their address books and writes the union as an
-import-compatible JSON. It only **collects candidates**; reachability is still
-measured by `crawl`, so running it does not change what is measured.
+it asks reachable peers for their address books and imports the union as crawl
+candidates. Against real nodes, 80 peers yield roughly 24k addresses (ipv4 /
+ipv6 / onion / i2p) in about 100 seconds, so it is far lighter than a
+measurement round.
 
-It is light enough to run elsewhere (tens of concurrent connections, once a day),
-e.g. on a machine at home, feeding the result to the measurement host:
+Enabling it is a **methodology change**: reachability is then measured against a
+wider candidate set. Both steps are required, and the date goes into the data
+repository's CHANGELOG so the series break is explicit:
+
+```yaml
+# config/observatory.yml
+candidate_sources:
+  - addrman
+  - harvest        # changes params_hash
+```
 
 ```sh
-# on the collecting machine
-bundle exec exe/observatory harvest --out harvest.json
-scp harvest.json vps:/tmp/
+sudo systemctl enable --now observatory-harvest.timer   # daily, 05:30 UTC
+```
+
+The collecting step can also run somewhere else (it needs no database), feeding
+the measurement host via `import --file`:
+
+```sh
+bundle exec exe/observatory harvest --out harvest.json && scp harvest.json vps:/tmp/
 # on the measurement host
 bundle exec exe/observatory import --file /tmp/harvest.json
 ```
-
-**Adding harvested addresses widens the candidate source, which is a methodology
-change**: record it in the data repository's CHANGELOG with the date before
-starting, so the series break is explicit.
 
 ### CLI
 

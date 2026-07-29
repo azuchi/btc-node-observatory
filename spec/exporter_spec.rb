@@ -46,6 +46,7 @@ RSpec.describe Observatory::Exporter do
     expect(data['snapshots'].size).to eq(2)
 
     # Observer block: addrman counts at export time (aggregates only, no raw addresses)
+    expect(data['observer']['candidate_sources']).to eq(['addrman'])
     expect(data['observer']['addrman']).to eq({ 'ipv4' => 2, 'ipv6' => 1, 'onion' => 1 })
     expect(data['observer']['backed_off']).to eq({})
 

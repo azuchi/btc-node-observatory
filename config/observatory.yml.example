@@ -28,6 +28,15 @@ onion:
 # Mitigation against ADDR gossip pollution: candidate set cap
 candidate_limit: 100000
 
+# Where candidate addresses come from. This IS a methodology parameter (it is
+# covered by params_hash): widening it changes what reachability is measured
+# against, so record the change in the data repository's CHANGELOG.
+#   addrman - the observer node's address book (bitcoind getnodeaddresses)
+#   harvest - recursive getaddr discovery (see `harvest:` below)
+candidate_sources:
+  - addrman
+#  - harvest
+
 backoff:
   fail_streak_threshold: 30   # exponential backoff after 30 consecutive failures (never removed)
   base_interval_sec: 900
