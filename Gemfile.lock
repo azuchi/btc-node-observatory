@@ -11,7 +11,7 @@ GEM
       thor (>= 1.1.0)
     bip-schnorr (0.7.0)
       ecdsa_ext (~> 0.5.0)
-    bitcoinrb (1.12.1)
+    bitcoinrb (1.13.0)
       base32 (>= 0.3.4)
       base64 (~> 0.2.0)
       bech32 (>= 1.5.0)
@@ -99,7 +99,7 @@ PLATFORMS
 
 DEPENDENCIES
   async (~> 2.0)
-  bitcoinrb (~> 1.12, >= 1.12.1)
+  bitcoinrb (~> 1.13)
   maxmind-db (~> 1.2)
   rake
   rspec (~> 3.0)
@@ -111,7 +111,7 @@ CHECKSUMS
   base64 (0.2.0) sha256=0f25e9b21a02a0cc0cea8ef92b2041035d39350946e8789c562b2d1a3da01507
   bech32 (1.5.0) sha256=04520e3bd899a8d9d27e698eb4fc0e9f9292b42d13628d9a1814b3b8a9a68a8a
   bip-schnorr (0.7.0) sha256=1a5db8ba06885319e67e3db12f3a6f5e7b3fb132b343985ff1cc1478d73dd1f1
-  bitcoinrb (1.12.1) sha256=77bd6accd1a081301ed453b1f9c6e3c523b89c6fd2a1316201e778f250ecf6fc
+  bitcoinrb (1.13.0) sha256=fa70f6ad1e549626ec9e0c3fc4e75fe64e9b4d4ce24c16e50c047db2bd3c0b0c
   console (1.37.0) sha256=8093b286c2595a063849c098594fee5155ecc7967d36f3aa8cbe7569c8f3efd7
   diff-lcs (1.6.2) sha256=9ae0d2cba7d4df3075fe8cd8602a8604993efc0dfa934cff568969efb1909962
   dnsruby (1.73.0) sha256=39c00478371e7012fa9421dc0557a9fb9f339a30121fb62e75c5aacb79d1f11a

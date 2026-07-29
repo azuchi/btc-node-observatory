@@ -3,7 +3,7 @@
 source 'https://rubygems.org'
 
 gem 'async', '~> 2.0'
-gem 'bitcoinrb', '~> 1.12', '>= 1.12.1'
+gem 'bitcoinrb', '~> 1.13'
 gem 'sqlite3', '~> 2.0'
 
 # Only needed when using GeoIP (MaxMind GeoLite2)
