@@ -10,3 +10,6 @@ WorkingDirectory=/opt/btc-node-observatory
 # geoip is not configured, and failures never block the export
 ExecStartPre=-/bin/bash -lc 'bundle exec exe/observatory geoip'
 ExecStart=/bin/bash -lc 'scripts/push_daily.sh'
+# Aggregating a day of observations is CPU-bound and grows with the candidate
+# set (~50s at 6k candidates), so keep well clear of systemd's 90s default
+TimeoutStartSec=30min
