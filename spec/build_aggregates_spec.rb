@@ -18,7 +18,7 @@ RSpec.describe 'btc-node-data/scripts/build_aggregates.rb' do
     FileUtils.mkdir_p(dir)
     File.write(File.join(dir, "#{date}.json"),
                JSON.generate({ 'date' => date,
-                               'observer' => { 'addrman' => { 'ipv4' => 40_000, 'onion' => 18_000 },
+                               'observer' => { 'known_addresses' => { 'ipv4' => 40_000, 'onion' => 18_000 },
                                                'backed_off' => { 'ipv4' => 30_000 } },
                                'snapshots' => snapshots }))
   end
@@ -77,7 +77,7 @@ RSpec.describe 'btc-node-data/scripts/build_aggregates.rb' do
       # latest.json: newest snapshot per network class with full breakdowns
       latest = JSON.parse(File.read(File.join(repo, 'aggregates', 'latest.json')))
       expect(latest['date']).to eq('2026-07-22')
-      expect(latest['observer']['addrman']).to eq({ 'ipv4' => 40_000, 'onion' => 18_000 })
+      expect(latest['observer']['known_addresses']).to eq({ 'ipv4' => 40_000, 'onion' => 18_000 })
       clearnet = latest['networks']['clearnet']
       expect(clearnet['instantaneous']).to eq(7102) # last snapshot of the last day
       expect(clearnet['candidates']).to eq(1000)

@@ -47,7 +47,7 @@ RSpec.describe Observatory::Exporter do
 
     # Observer block: addrman counts at export time (aggregates only, no raw addresses)
     expect(data['observer']['candidate_sources']).to eq(['addrman'])
-    expect(data['observer']['addrman']).to eq({ 'ipv4' => 2, 'ipv6' => 1, 'onion' => 1 })
+    expect(data['observer']['known_addresses']).to eq({ 'ipv4' => 2, 'ipv6' => 1, 'onion' => 1 })
     expect(data['observer']['backed_off']).to eq({})
 
     clearnet = data['snapshots'].find { |s| s['network_class'] == 'clearnet' }

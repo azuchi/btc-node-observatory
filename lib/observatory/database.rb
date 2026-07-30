@@ -113,7 +113,7 @@ module Observatory
       end
     end
 
-    # Known addresses per network (the observer's addrman mirror).
+    # Known addresses per network, across every candidate source.
     def node_counts_by_network
       @db.execute('SELECT network, COUNT(*) FROM nodes GROUP BY network').to_h
     end
