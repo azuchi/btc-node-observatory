@@ -62,15 +62,22 @@ module Observatory
 
     # A dead SOCKS proxy would record an all-zero snapshot ("0 onion nodes")
     # that is indistinguishable from a real measurement and would pollute the
-    # series. Distinguish "Tor is down" from "nodes are down" by refusing to
-    # take a snapshot at all.
+    # series. Every declared proxy must answer: running with fewer Tor daemons
+    # than configured would silently cut measurement capacity.
     def preflight_socks!(params)
+      socks5_proxies(params).each do |(host, port)|
+        ::Socket.tcp(host, port, connect_timeout: 5).close
+      rescue SystemCallError, IO::TimeoutError => e
+        raise "SOCKS5 proxy #{host}:#{port} is not reachable (#{e.class}); " \
+              'aborting the onion snapshot (are all dedicated Tor daemons running?)'
+      end
+    end
+
+    # Accepts both socks5_ports (list) and the older single socks5_port.
+    def socks5_proxies(params)
       host = params['socks5_host']
-      port = params['socks5_port']
-      ::Socket.tcp(host, port, connect_timeout: 5).close
-    rescue SystemCallError, IO::TimeoutError => e
-      raise "SOCKS5 proxy #{host}:#{port} is not reachable (#{e.class}); " \
-            'aborting the onion snapshot (is the dedicated Tor running?)'
+      ports = params['socks5_ports'] || [params['socks5_port']].compact
+      ports.map { |port| [host, port] }
     end
 
     def build_prober(network_class, params)
@@ -80,10 +87,7 @@ module Observatory
         connect_timeout: params['connect_timeout'],
         handshake_timeout: params['handshake_timeout']
       }
-      if network_class.to_s == 'onion'
-        opts[:socks5_host] = params['socks5_host']
-        opts[:socks5_port] = params['socks5_port']
-      end
+      opts[:socks5_proxies] = socks5_proxies(params) if network_class.to_s == 'onion'
       Prober.new(**opts)
     end
 

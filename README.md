@@ -60,7 +60,12 @@ month's raw data (`observatory archive`), uploads the tarball to a GitHub Releas
 of the data repository when `DATA_REPO_SLUG` is set, then frees disk space with
 `observatory prune` (default retention 60 days; daily JSON exports are unaffected).
 
-Run a **dedicated Tor instance** for the onion crawl (do not share the Umbrel/LN Tor daemon).
+Run **dedicated Tor instances** for the onion crawl (do not share the Umbrel/LN
+Tor daemon). One daemon cannot keep up with a 20k-address candidate set — its
+circuit queue saturates and virtually every probe times out — so probes are
+spread across several daemons round-robin. See
+[systemd/tor-instances.md](systemd/tor-instances.md) for the setup; the number of
+daemons is part of `params_hash`.
 
 ### Widening the candidate set
 

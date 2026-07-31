@@ -36,6 +36,12 @@ RSpec.describe Observatory::Config do
       expect(a).not_to eq(b)
     end
 
+    it 'changes when the number of Tor daemons changes (onion throughput)' do
+      a = build_config.params_hash(:onion)
+      b = build_config({ 'onion' => { 'socks5_ports' => [9050, 9052] } }).params_hash(:onion)
+      expect(a).not_to eq(b)
+    end
+
     it 'ignores the order candidate sources are listed in' do
       a = build_config({ 'candidate_sources' => %w[addrman harvest] }).params_hash(:clearnet)
       b = build_config({ 'candidate_sources' => %w[harvest addrman] }).params_hash(:clearnet)

@@ -22,14 +22,18 @@ module Observatory
 
     class HandshakeError < StandardError; end
 
+    # @param socks5_proxies [Array<Array(String, Integer)>] [[host, port], ...].
+    #   Probes are spread across them round-robin: a single Tor daemon saturates
+    #   its circuit-building queue long before the network runs out of nodes, so
+    #   capacity scales with the number of daemons, not with concurrency alone.
     def initialize(user_agent:, protocol_version:, connect_timeout:, handshake_timeout:,
-                   socks5_host: nil, socks5_port: nil)
+                   socks5_proxies: [])
       @user_agent = user_agent
       @protocol_version = protocol_version
       @connect_timeout = connect_timeout
       @handshake_timeout = handshake_timeout
-      @socks5_host = socks5_host
-      @socks5_port = socks5_port
+      @socks5_proxies = socks5_proxies
+      @proxy_cursor = 0
       @magic = Bitcoin.chain_params.magic_head.htb
     end
 
@@ -69,11 +73,19 @@ module Observatory
     private
 
     def open_socket(address, port)
-      if @socks5_host
-        Socks5.connect(@socks5_host, @socks5_port, address, port)
-      else
+      if @socks5_proxies.empty?
         ::Socket.tcp(address, port)
+      else
+        host, socks_port = next_proxy
+        Socks5.connect(host, socks_port, address, port)
       end
+    end
+
+    # Fibers run cooperatively, so a plain counter is enough here.
+    def next_proxy
+      proxy = @socks5_proxies[@proxy_cursor % @socks5_proxies.size]
+      @proxy_cursor += 1
+      proxy
     end
 
     # @param announce_addrv2 [Boolean] send sendaddrv2 before our verack, so the

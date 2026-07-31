@@ -25,7 +25,10 @@ module Observatory
         'connect_timeout' => 30,
         'handshake_timeout' => 30,
         'socks5_host' => '127.0.0.1',
-        'socks5_port' => 9050
+        # One Tor daemon saturates its circuit queue well before the candidate
+        # set is exhausted, so capacity comes from running several of them.
+        # The count is part of the methodology (see params_hash).
+        'socks5_ports' => [9050]
       },
       'candidate_limit' => 100_000,     # candidate set cap against ADDR gossip pollution
       # Where candidate addresses come from. Part of the methodology, so it is
@@ -102,6 +105,8 @@ module Observatory
         'handshake_timeout' => np['handshake_timeout'],
         'candidate_limit' => candidate_limit,
         'candidate_sources' => candidate_sources,
+        # onion throughput is bounded by how many Tor daemons back the probes
+        'socks5_instances' => socks5_instances(np),
         'fail_streak_threshold' => backoff['fail_streak_threshold'],
         'base_interval_sec' => backoff['base_interval_sec'],
         'max_exponent' => backoff['max_exponent'],
@@ -111,6 +116,12 @@ module Observatory
     end
 
     private
+
+    # 0 for direct (clearnet) probing, otherwise the number of SOCKS proxies.
+    def socks5_instances(network_params)
+      ports = network_params['socks5_ports'] || [network_params['socks5_port']].compact
+      ports.size
+    end
 
     def expand(path)
       File.absolute_path?(path) ? path : File.join(@base_dir, path)

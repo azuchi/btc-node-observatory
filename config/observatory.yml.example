@@ -18,12 +18,16 @@ clearnet:
 
 onion:
   interval_sec: 86400      # once a day; circuit setup dominates, higher frequency is not feasible
-  concurrency: 50          # practical limit for a single Tor daemon is 50-100
+  concurrency: 50          # roughly 30 per Tor daemon
   connect_timeout: 30
   handshake_timeout: 30
-  # Run a dedicated Tor instance. Do not share the Umbrel/LN Tor daemon.
+  # Run dedicated Tor instances. Do not share the Umbrel/LN Tor daemon.
+  # One daemon saturates its circuit-building queue well before the candidate
+  # set is exhausted, so probes are spread across all listed ports round-robin.
+  # The number of ports is a methodology parameter (it affects params_hash);
+  # see systemd/tor-instances.md for setting up several daemons.
   socks5_host: 127.0.0.1
-  socks5_port: 9150
+  socks5_ports: [9050]
 
 # Mitigation against ADDR gossip pollution: candidate set cap
 candidate_limit: 100000

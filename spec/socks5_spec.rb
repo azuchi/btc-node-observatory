@@ -39,6 +39,23 @@ RSpec.describe Observatory::Socks5 do
     expect(received[:port]).to eq(8333)
   end
 
+  it 'spreads probes across every configured proxy (round-robin)' do
+    port_a, received_a = start_socks_server
+    port_b, received_b = start_socks_server
+    prober = Observatory::Prober.new(
+      user_agent: '/x/', protocol_version: 70_016, connect_timeout: 2, handshake_timeout: 2,
+      socks5_proxies: [['127.0.0.1', port_a], ['127.0.0.1', port_b]]
+    )
+    # The fake SOCKS servers accept the CONNECT but never speak Bitcoin, so the
+    # probes fail — what matters is which proxy each one went through.
+    Sync do
+      prober.probe('aaa.onion', 8333)
+      prober.probe('bbb.onion', 8333)
+    end
+    expect(received_a[:host]).to eq('aaa.onion')
+    expect(received_b[:host]).to eq('bbb.onion')
+  end
+
   it 'raises an Error carrying the reply_code on failure replies' do
     port, = start_socks_server(reply_code: 0x04) # host unreachable
     expect do
