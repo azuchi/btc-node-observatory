@@ -11,4 +11,4 @@ ExecStart=/bin/bash -lc 'bundle exec exe/observatory crawl onion'
 LimitNOFILE=65536
 Nice=10
 # onion can take hours in the worst case where every probe times out
-TimeoutStartSec=6h
+TimeoutStartSec=12h
