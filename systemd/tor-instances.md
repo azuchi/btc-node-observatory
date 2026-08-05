@@ -57,13 +57,18 @@ rendezvous cache grows to roughly `candidates * 4.2 KB` over a round — about
 a few hundred addresses a day.
 
 Setting `MaxMemInQueues` below that figure does not save memory, it breaks the
-crawl. At 96 MB every round hit the ceiling about two hours in, after which Tor
-spent the rest of the round killing its own circuits (`We're low on memory ...
-Killing circuits with over-long queues`) — inflating the `timeout` bucket with
-self-inflicted failures — and then aborted outright on a conflux assertion in
-Tor 0.4.8.10. All three daemons crashed mid-round, every round, for days.
-`ConfluxEnabled 0` removes that abort path; conflux is a multipath speed
-optimisation that a crawler does not need.
+crawl. At 96 MB every round hit the ceiling roughly two hours in, and within a
+few minutes of `We're low on memory ... Killing circuits with over-long queues`
+Tor aborted on a conflux assertion in Tor 0.4.8.10. All three daemons crashed
+mid-round, every round, for days. `ConfluxEnabled 0` removes that abort path;
+conflux is a multipath speed optimisation that a crawler does not need.
+
+The ceiling also made rounds incomparable. The cache fills in proportion to
+descriptors successfully fetched, so a productive round hits the ceiling — and
+therefore crashes — sooner, and then spends longer on freshly restarted daemons.
+2026-08-04 and 08-05 ran identical parameters: the second reached the ceiling 20%
+faster and returned 29% more reachable nodes. Which part of that gap is the
+network and which is our own Tor state is not recoverable from the logs.
 
 So: 256 MB per instance, three instances, roughly 130 MB resident each in
 practice on a 1 GB VPS. `MaxMemInQueues` is a ceiling rather than a reservation,
