@@ -95,6 +95,12 @@ module Observatory
 
     # Hash (first 8 hex chars) over the parameters that define the measurement
     # methodology only. Changing user_agent or storage paths does not change it.
+    #
+    # Adding or renaming a key below rehashes EVERY network, including ones the
+    # new key does not apply to (2026-07-31: adding socks5_instances moved the
+    # clearnet hash even though its value is 0 there). Consumers read a changed
+    # hash as a break in the series, so whenever this key set changes, record it
+    # in the data repository's CHANGELOG as a definition change.
     def params_hash(network_class)
       np = network_params(network_class)
       canonical = {
