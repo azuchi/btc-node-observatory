@@ -1,9 +1,10 @@
 # Running several Tor daemons for the onion crawl
 
 A single Tor daemon saturates its circuit-building queue long before the
-candidate set is exhausted: with ~20k onion candidates behind one daemon, 99% of
-probes end in `timeout` regardless of how generous the timeouts are. Throughput
-comes from running several daemons and spreading probes across them.
+candidate set is exhausted: with ~20k onion candidates behind one daemon, 98% of
+probes end in `timeout`. Throughput comes from running several daemons and
+spreading probes across them — and from giving each probe long enough to finish
+building a rendezvous circuit (90 s, not 30 s).
 
 Debian/Ubuntu ship a systemd template (`tor@.service`) for exactly this.
 
@@ -15,10 +16,12 @@ Each instance needs its own SocksPort and data directory:
 for i in 1 2 3; do
   port=$((9050 + i))
   sudo install -d -o debian-tor -g debian-tor -m 700 /var/lib/tor-instances/crawler$i
-  printf 'SocksPort %d\nDataDirectory /var/lib/tor-instances/crawler%d\n' "$port" "$i" \
-    | sudo tee /etc/tor/instances/crawler$i/torrc
+  printf 'SocksPort %d\nDataDirectory /var/lib/tor-instances/crawler%d\nMaxMemInQueues 256 MB\nConfluxEnabled 0\n' \
+    "$port" "$i" | sudo tee /etc/tor/instances/crawler$i/torrc
 done
 ```
+
+`MaxMemInQueues` and `ConfluxEnabled` are not optional here — see Sizing below.
 
 If `/etc/tor/instances/` does not exist, use `tor-instance-create crawler$i`
 (from the `tor` package), which creates the directories and the torrc for you.
@@ -36,8 +39,8 @@ ss -tlnp | grep -E '905[123]'      # 9051, 9052, 9053 should be listening
 # config/observatory.yml
 onion:
   concurrency: 90          # roughly 30 per daemon
-  connect_timeout: 30
-  handshake_timeout: 30
+  connect_timeout: 90
+  handshake_timeout: 90
   socks5_host: 127.0.0.1
   socks5_ports: [9051, 9052, 9053]
 ```
@@ -47,8 +50,31 @@ methodology change: record it in the data repository's CHANGELOG.
 
 ## Sizing
 
-Each daemon holds a few hundred MB of resident memory once circuits are warm, so
-on a 1 GB VPS two or three instances is the practical ceiling — watch `free -h`
-during the first run. The crawl aborts before recording anything if any declared
-instance is unreachable, so a daemon that failed to start is loud rather than
-silently halving capacity.
+**A round's memory use is set by the candidate count, not by the timeouts.** Tor
+caches the onion-service descriptor of every address it looks up, so the
+rendezvous cache grows to roughly `candidates * 4.2 KB` over a round — about
+100 MB at 24k candidates. Budget for that and for growth: the candidate set gains
+a few hundred addresses a day.
+
+Setting `MaxMemInQueues` below that figure does not save memory, it breaks the
+crawl. At 96 MB every round hit the ceiling about two hours in, after which Tor
+spent the rest of the round killing its own circuits (`We're low on memory ...
+Killing circuits with over-long queues`) — inflating the `timeout` bucket with
+self-inflicted failures — and then aborted outright on a conflux assertion in
+Tor 0.4.8.10. All three daemons crashed mid-round, every round, for days.
+`ConfluxEnabled 0` removes that abort path; conflux is a multipath speed
+optimisation that a crawler does not need.
+
+So: 256 MB per instance, three instances, roughly 130 MB resident each in
+practice on a 1 GB VPS. `MaxMemInQueues` is a ceiling rather than a reservation,
+so a generous value costs nothing until the workload actually grows into it.
+Watch `free -h` and the daemons' RSS during the first run.
+
+`observatory-onion.service` restarts all three daemons before each round
+(`ExecStartPre`), so every round starts from an empty descriptor cache and is
+measured under the same conditions rather than inheriting the previous day's
+state.
+
+The crawl aborts before recording anything if any declared instance is
+unreachable, so a daemon that failed to start is loud rather than silently
+halving capacity.

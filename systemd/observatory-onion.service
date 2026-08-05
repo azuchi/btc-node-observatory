@@ -1,12 +1,18 @@
 [Unit]
 Description=btc-node-observatory onion crawl (single snapshot)
-After=network-online.target tor@observatory.service
+After=network-online.target tor@crawler1.service tor@crawler2.service tor@crawler3.service
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 User=observatory
 WorkingDirectory=/opt/btc-node-observatory
+# Start every round from an empty Tor descriptor cache, so rounds are measured
+# under the same conditions instead of inheriting the previous day's state.
+# '+' runs as root despite User=; --no-block keeps this out of the job that is
+# starting this very unit, and the sleep covers bootstrap (~3 s in practice).
+ExecStartPre=+/bin/systemctl restart --no-block tor@crawler1.service tor@crawler2.service tor@crawler3.service
+ExecStartPre=/bin/sleep 30
 ExecStart=/bin/bash -lc 'bundle exec exe/observatory crawl onion'
 LimitNOFILE=65536
 Nice=10
