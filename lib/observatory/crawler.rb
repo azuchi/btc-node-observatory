@@ -30,6 +30,13 @@ module Observatory
                                   base_interval: backoff['base_interval_sec'],
                                   max_exponent: backoff['max_exponent'])
       log "#{network_class}: #{candidates.size} candidates"
+      if candidates.size >= @config.candidate_limit
+        # A binding limit drops never-successful addresses first (see
+        # Database#candidates), so it understates reachability without any other
+        # trace in the data. Say so rather than letting the round look normal.
+        log "WARNING: candidate_limit (#{@config.candidate_limit}) reached — " \
+            'addresses were dropped from this round; raise it or the round undercounts'
+      end
 
       snapshot_id = @db.create_snapshot(
         network_class: network_class,

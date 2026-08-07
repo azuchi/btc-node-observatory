@@ -32,7 +32,7 @@ parser.parse!
 
 command = ARGV.shift
 config = Observatory::Config.load(options[:config])
-db = Observatory::Database.new(config.db_path)
+db = Observatory::Database.new(config.db_path, backoff: config.backoff)
 
 case command
 when 'import'

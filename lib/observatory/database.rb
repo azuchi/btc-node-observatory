@@ -26,7 +26,8 @@ module Observatory
         port         INTEGER NOT NULL,
         network      TEXT NOT NULL,       -- 'ipv4'|'ipv6'|'onion'|'i2p'|'cjdns'
         first_seen   INTEGER NOT NULL,
-        last_seen    INTEGER,             -- last time seen in addrman / probed
+        last_seen    INTEGER,             -- last time seen anywhere (addrman / harvest / probe)
+        last_probed  INTEGER,             -- last time WE probed it; backoff keys off this
         last_success INTEGER,
         fail_streak  INTEGER DEFAULT 0,
         UNIQUE(address, port)
@@ -60,7 +61,9 @@ module Observatory
 
     attr_reader :db
 
-    def initialize(path)
+    # backoff: the config's backoff section. Only the one-off last_probed
+    # migration needs it; normal queries take these as arguments.
+    def initialize(path, backoff: Observatory::Config::DEFAULTS['backoff'])
       FileUtils.mkdir_p(File.dirname(path))
       @db = SQLite3::Database.new(path)
       @db.busy_timeout = 30_000
@@ -68,6 +71,56 @@ module Observatory
       @db.execute('PRAGMA synchronous = NORMAL')
       @db.execute('PRAGMA foreign_keys = ON')
       @db.execute_batch(SCHEMA)
+      migrate_last_probed!(backoff)
+    end
+
+    # Number of rounds the one-off backlog release is spread over (96 = 24 h of
+    # clearnet rounds). See migrate_last_probed!.
+    RELEASE_ROUNDS = 96
+
+    # 2026-08-07: backoff used to key off last_seen, which the addrman import
+    # rewrites to `now` for every address it returns, every 15 min. An address
+    # still present in the addrman was therefore never eligible again once its
+    # fail_streak crossed the threshold — permanent exclusion rather than
+    # exponential backoff. It hit 46k clearnet addresses, 296 of which had been
+    # reachable within the previous week.
+    #
+    # last_probed is backfilled from the observation history, so every address
+    # gets its real last probe time and the correctly-backing-off ones keep their
+    # place in the rotation. Only the addresses that come out *already overdue*
+    # (~97k) are rewritten, to fall due one round-worth at a time rather than all
+    # at once: 97k extra candidates in a single round would have overrun the
+    # 15 min interval, which has cost us rounds before (2026-07-31, 74k
+    # candidates, 18.2 min, 2 rounds lost).
+    def migrate_last_probed!(backoff)
+      return if @db.execute('PRAGMA table_info(nodes)').any? { |c| c[1] == 'last_probed' }
+
+      threshold = backoff['fail_streak_threshold']
+      base = backoff['base_interval_sec']
+      max_exp = backoff['max_exponent']
+      now = Time.now.to_i
+
+      @db.transaction do
+        @db.execute('ALTER TABLE nodes ADD COLUMN last_probed INTEGER')
+        @db.execute(<<~SQL)
+          UPDATE nodes SET last_probed = (
+            SELECT MAX(s.started_at) FROM observations o
+            JOIN snapshots s ON s.id = o.snapshot_id
+            WHERE o.node_id = nodes.id
+          )
+        SQL
+        # An overdue row is made due again at `now + (id % 96) * 900`, which means
+        # backdating last_probed by its own backoff interval from that point.
+        # Rows below the threshold are left alone: the interval does not apply to
+        # them, so rewriting last_probed would not delay them anyway.
+        interval = "#{base} * (1 << MIN(fail_streak - #{threshold}, #{max_exp}))"
+        @db.execute(<<~SQL, [now, now])
+          UPDATE nodes
+             SET last_probed = ? + (id % #{RELEASE_ROUNDS}) * #{base} - (#{interval})
+           WHERE fail_streak >= #{threshold}
+             AND COALESCE(last_probed, 0) + (#{interval}) <= ?
+        SQL
+      end
     end
 
     def close = @db.close
@@ -105,7 +158,7 @@ module Observatory
         WHERE network IN (#{placeholders})
           AND (
             fail_streak < ?
-            OR COALESCE(last_seen, 0) + ? * (1 << MIN(fail_streak - ?, ?)) <= ?
+            OR COALESCE(last_probed, 0) + ? * (1 << MIN(fail_streak - ?, ?)) <= ?
           )
         ORDER BY (last_success IS NULL), last_success DESC, first_seen DESC
         LIMIT ?
@@ -151,19 +204,21 @@ module Observatory
             (snapshot_id, node_id, success, fail_reason, protocol_version, user_agent, services, start_height, rtt_ms)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         SQL
+        # last_probed drives backoff and must only ever be set here, by an actual
+        # probe. Do not let address imports touch it (see migrate_last_probed!).
         ok = @db.prepare(<<~SQL)
-          UPDATE nodes SET last_seen = ?, last_success = ?, fail_streak = 0 WHERE id = ?
+          UPDATE nodes SET last_seen = ?, last_probed = ?, last_success = ?, fail_streak = 0 WHERE id = ?
         SQL
         ng = @db.prepare(<<~SQL)
-          UPDATE nodes SET last_seen = ?, fail_streak = fail_streak + 1 WHERE id = ?
+          UPDATE nodes SET last_seen = ?, last_probed = ?, fail_streak = fail_streak + 1 WHERE id = ?
         SQL
         results.each do |r|
           obs.execute(snapshot_id, r[:node_id], r[:success] ? 1 : 0, r[:fail_reason],
                       r[:protocol_version], r[:user_agent], r[:services], r[:start_height], r[:rtt_ms])
           if r[:success]
-            ok.execute(finished_at, finished_at, r[:node_id])
+            ok.execute(finished_at, finished_at, finished_at, r[:node_id])
           else
-            ng.execute(finished_at, r[:node_id])
+            ng.execute(finished_at, finished_at, r[:node_id])
           end
         end
         [obs, ok, ng].each(&:close)
