@@ -88,8 +88,15 @@ module Observatory
     # Candidate selection.
     # - fail_streak below the threshold: always eligible
     # - at/above the threshold: exponential backoff (base * 2^(streak - threshold), capped at 2^max_exponent)
-    # Nothing is ever removed (records are kept). candidate_limit caps the set,
-    # preferring nodes with a success track record.
+    # Nothing is ever removed (records are kept), so `nodes` grows without bound;
+    # backoff is what keeps a round's workload flat, not pruning.
+    #
+    # `limit` (candidate_limit) caps THIS ROUND only, applied after the backoff
+    # filter — it is not a cap on the stored set. The ORDER BY means a binding
+    # limit drops never-successful nodes first, which is the least damaging
+    # truncation but still silently understates reachability. A round that hit it
+    # is only visible as `candidates` == the limit exactly, so keep the limit well
+    # above the peak (85,749 on 2026-07-30 is the highest seen so far).
     def candidates(network_class, now:, limit:, threshold:, base_interval:, max_exponent:)
       networks = network_class.to_s == 'clearnet' ? CLEARNET_NETWORKS : [network_class.to_s]
       placeholders = networks.map { '?' }.join(',')

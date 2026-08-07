@@ -30,7 +30,9 @@ module Observatory
         # The count is part of the methodology (see params_hash).
         'socks5_ports' => [9050]
       },
-      'candidate_limit' => 100_000,     # candidate set cap against ADDR gossip pollution
+      # Cap on how many addresses ONE round probes (see Database#candidates).
+      # It does not bound the stored address set, which is never pruned.
+      'candidate_limit' => 100_000,
       # Where candidate addresses come from. Part of the methodology, so it is
       # covered by params_hash: widening it changes what "reachable" is measured
       # against. 'addrman' = the observer node's address book, 'harvest' =
