@@ -43,11 +43,21 @@ RSpec.describe Observatory::Database do
     it 'applies exponential backoff at/above the threshold (excluded until the interval passes, then returns)' do
       id = add_node('1.1.1.1')
       # streak 32 → wait 900 * 2^2 = 3600 s
-      db.db.execute('UPDATE nodes SET fail_streak = 32, last_seen = ? WHERE id = ?', [now, id])
+      db.db.execute('UPDATE nodes SET fail_streak = 32, last_probed = ? WHERE id = ?', [now, id])
       expect(select_candidates(at: now + 3599).map(&:first)).not_to include(id)
       expect(select_candidates(at: now + 3600).map(&:first)).to include(id)
     end
 
+    # The 2026-08-07 bug: backoff keyed off last_seen, which the addrman import
+    # rewrites to `now` every 15 min, so an address still in the addrman never
+    # became eligible again once it crossed the threshold.
+    it 'is not delayed by re-imports between probes' do
+      id = add_node('1.1.1.1')
+      db.db.execute('UPDATE nodes SET fail_streak = 32, last_probed = ? WHERE id = ?', [now, id])
+      # the addrman keeps reporting it, right up to the moment it comes due
+      (1..4).each { |i| add_node('1.1.1.1', seen_at: now + (i * 900)) }
+      expect(select_candidates(at: now + 3600).map(&:first)).to include(id)
+    end
     it 'caps the set via candidate_limit, preferring nodes with a success record' do
       stale = add_node('9.9.9.9')
       fresh = add_node('1.1.1.1')
@@ -61,6 +71,20 @@ RSpec.describe Observatory::Database do
   end
 
   describe '#record_results / #union_24h' do
+    it 'stamps last_probed on both success and failure' do
+      ok = add_node('1.1.1.1')
+      ng = add_node('2.2.2.2')
+      sid = db.create_snapshot(network_class: :clearnet, started_at: now, candidates: 2,
+                               crawler_ver: 'test', params_hash: 'deadbeef')
+      db.record_results(sid, [{ node_id: ok, success: true }, { node_id: ng, success: false, fail_reason: 'timeout' }],
+                        finished_at: now + 10)
+      probed = db.db.execute('SELECT id, last_probed, last_success, fail_streak FROM nodes ORDER BY id').to_h do |r|
+        [r[0], r[1..]]
+      end
+      expect(probed[ok]).to eq([now + 10, now + 10, 0])
+      expect(probed[ng]).to eq([now + 10, nil, 1])
+    end
+
     it 'resets fail_streak on success, increments on failure; union_24h is the 24h window union' do
       a = add_node('1.1.1.1')
       b = add_node('2.2.2.2')
