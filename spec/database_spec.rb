@@ -70,6 +70,40 @@ RSpec.describe Observatory::Database do
     end
   end
 
+  describe 'write contention' do
+    # 2026-08-09: a 3h52m onion round was discarded because its write waited out
+    # the busy timeout while the clearnet round and the address import held the
+    # lock back to back for five minutes.
+    it 'retries a write that lost the race for the lock, without duplicating it' do
+      ok = add_node('1.1.1.1')
+      ng = add_node('2.2.2.2')
+      sid = db.create_snapshot(network_class: :clearnet, started_at: now, candidates: 2,
+                               crawler_ver: 'test', params_hash: 'deadbeef')
+      results = [{ node_id: ok, success: true }, { node_id: ng, success: false, fail_reason: 'timeout' }]
+
+      calls = 0
+      allow(db).to receive(:write_results).and_wrap_original do |orig, *args, **kwargs|
+        calls += 1
+        raise SQLite3::BusyException, 'database is locked' if calls == 1
+
+        orig.call(*args, **kwargs)
+      end
+
+      expect { db.record_results(sid, results, finished_at: now + 10) }.not_to raise_error
+      expect(calls).to eq(2)
+      # the failed attempt rolled back, so the retry is the only writer
+      expect(db.db.get_first_value('SELECT COUNT(*) FROM observations WHERE snapshot_id = ?', [sid])).to eq(2)
+      expect(db.db.get_first_value('SELECT fail_streak FROM nodes WHERE id = ?', [ng])).to eq(1)
+    end
+
+    it 'gives up after the retry budget rather than looping forever' do
+      allow(db).to receive(:write_results).and_raise(SQLite3::BusyException, 'database is locked')
+      sid = db.create_snapshot(network_class: :clearnet, started_at: now, candidates: 0,
+                               crawler_ver: 'test', params_hash: 'deadbeef')
+      expect { db.record_results(sid, [], finished_at: now + 10) }.to raise_error(SQLite3::BusyException)
+    end
+  end
+
   describe '#record_results / #union_24h' do
     it 'stamps last_probed on both success and failure' do
       ok = add_node('1.1.1.1')

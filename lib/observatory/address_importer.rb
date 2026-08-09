@@ -17,15 +17,23 @@ module Observatory
 
     # entries: [{ 'address' =>, 'port' =>, 'network' =>, 'time' => }, ...]
     # @return [Hash] import counts per network
+    # Committed in batches rather than as one transaction. A full addrman import
+    # is ~52k rows and a harvest import ~88k, and holding the write lock for the
+    # minutes that takes starves everything else — on 2026-08-09 it was part of a
+    # 5-minute unbroken lock hold that cost the onion crawl a whole round.
+    #
+    # Batching is safe here precisely because upsert_node is idempotent (it only
+    # advances last_seen via MAX), so a partial import is a smaller import, never
+    # a wrong one. The next run is 15 minutes away and picks up the rest.
     def import(entries, now: Time.now.to_i)
       counts = Hash.new(0)
-      @db.transaction do
-        entries.each do |e|
-          network = e['network']
-          next unless KNOWN_NETWORKS.include?(network)
-
-          @db.upsert_node(address: e['address'], port: e['port'], network: network, seen_at: now)
-          counts[network] += 1
+      entries.select { |e| KNOWN_NETWORKS.include?(e['network']) }
+             .each_slice(Observatory::Database::IMPORT_BATCH_SIZE) do |batch|
+        @db.transaction do
+          batch.each do |e|
+            @db.upsert_node(address: e['address'], port: e['port'], network: e['network'], seen_at: now)
+            counts[e['network']] += 1
+          end
         end
       end
       counts

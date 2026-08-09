@@ -59,6 +59,13 @@ module Observatory
       CREATE INDEX IF NOT EXISTS idx_snapshots_class_time ON snapshots(network_class, started_at);
     SQL
 
+    # How long a writer waits for the lock before giving up.
+    BUSY_TIMEOUT_MS = 600_000
+
+    # Rows per transaction for address imports. Small enough that the lock is
+    # released regularly, large enough to keep SQLite's batching win.
+    IMPORT_BATCH_SIZE = 2_000
+
     attr_reader :db
 
     # backoff: the config's backoff section. Only the one-off last_probed
@@ -66,7 +73,11 @@ module Observatory
     def initialize(path, backoff: Observatory::Config::DEFAULTS['backoff'])
       FileUtils.mkdir_p(File.dirname(path))
       @db = SQLite3::Database.new(path)
-      @db.busy_timeout = 30_000
+      # Writers here hold the lock for minutes, not milliseconds: a clearnet
+      # round writes tens of thousands of observations and the address imports
+      # are larger still. 30 s was not enough for the onion crawl to find a gap —
+      # on 2026-08-09 it waited out its timeout and threw away a 3h52m round.
+      @db.busy_timeout = BUSY_TIMEOUT_MS
       @db.execute('PRAGMA journal_mode = WAL')
       @db.execute('PRAGMA synchronous = NORMAL')
       @db.execute('PRAGMA foreign_keys = ON')
@@ -197,7 +208,36 @@ module Observatory
 
     # Bulk write of probe results. Observation inserts and node state updates run
     # in a single transaction (SQLite has a single writer, so we batch the writes).
+    #
+    # This transaction MUST NOT be split into chunks. `fail_streak = fail_streak + 1`
+    # below is not idempotent, and fail_streak drives candidate selection, so a
+    # chunk applied twice would corrupt backoff silently. Being a single
+    # transaction is also what makes the retry safe: a failure rolls the whole
+    # thing back, so the retry starts from nothing written. Chunk the address
+    # imports instead — their upserts are idempotent.
     def record_results(snapshot_id, results, finished_at:)
+      with_write_retry("record_results(snapshot #{snapshot_id})") do
+        write_results(snapshot_id, results, finished_at: finished_at)
+      end
+    end
+
+    # Retries a whole write transaction that lost the race for the lock. Only
+    # safe for transactions that are atomic and self-contained; see the warning
+    # on record_results.
+    def with_write_retry(label, attempts: 3)
+      tries = 0
+      begin
+        tries += 1
+        yield
+      rescue SQLite3::BusyException => e
+        raise if tries >= attempts
+
+        warn "#{label}: #{e.message}, retrying (#{tries}/#{attempts - 1})"
+        retry
+      end
+    end
+
+    def write_results(snapshot_id, results, finished_at:)
       @db.transaction do
         obs = @db.prepare(<<~SQL)
           INSERT INTO observations
