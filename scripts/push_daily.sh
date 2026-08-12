@@ -25,4 +25,16 @@ git commit -m "data: ${DATE}"
 git pull --rebase origin main
 git push origin HEAD
 # Also push to the mirror (Codeberg / GitLab). Configure a remote named 'mirror'.
-git push mirror HEAD || echo "WARN: mirror push failed (continuing)"
+#
+# "Not configured" and "configured but broken" are reported differently on
+# purpose. Emitting the same warning for both means the daily log carries a WARN
+# that is expected and therefore ignored -- at which point a mirror that has
+# genuinely stopped accepting pushes looks exactly like one that was never set
+# up, and the redundancy is silently gone.
+if ! git remote get-url mirror >/dev/null 2>&1; then
+  echo "mirror: no 'mirror' remote configured, skipping (single point of failure: GitHub only)"
+elif git push mirror HEAD; then
+  echo "mirror: pushed"
+else
+  echo "WARN: mirror remote is configured but the push failed -- the mirror is now stale"
+fi
