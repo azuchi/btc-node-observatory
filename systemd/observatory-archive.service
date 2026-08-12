@@ -6,8 +6,17 @@ After=network-online.target
 Type=oneshot
 User=observatory
 WorkingDirectory=/opt/btc-node-observatory
-# Set DATA_REPO_SLUG to upload the tarball to GitHub Releases (requires gh auth)
-#Environment=DATA_REPO_SLUG=azuchi/btc-node-data
+# Set DATA_REPO_SLUG to upload the tarball to GitHub Releases. Without it the
+# script keeps the tarball locally and skips the prune, because this host would
+# otherwise hold the only copy of the observations being deleted.
+Environment=DATA_REPO_SLUG=azuchi/btc-node-data
+# GH_TOKEN for the upload. A fine-grained PAT scoped to the data repository with
+# Contents: read/write is enough -- the deploy key that pushes the daily export
+# cannot be used here, as it speaks Git only and Releases are an API operation.
+# systemd reads this as root before dropping to User=, so the observatory user
+# never needs read access to the file itself. Optional (leading `-`) so a
+# checkout without the file still starts.
+EnvironmentFile=-/etc/observatory-archive.env
 ExecStart=/bin/bash -lc 'scripts/archive_month.sh'
 # VACUUM of a large database can take a while
 TimeoutStartSec=2h

@@ -23,6 +23,7 @@ tarball="${ARCHIVE_DIR}/raw-${MONTH}.tar"
 tar -cf "$tarball" -C "$ARCHIVE_DIR" "raw-${MONTH}"
 echo "tarball: $tarball"
 
+uploaded=0
 if [[ -n "${DATA_REPO_SLUG:-}" ]] && command -v gh >/dev/null; then
   gh release create "raw-${MONTH}" --repo "$DATA_REPO_SLUG" \
     --title "Raw data ${MONTH}" \
@@ -30,9 +31,23 @@ if [[ -n "${DATA_REPO_SLUG:-}" ]] && command -v gh >/dev/null; then
     "$tarball" \
     || gh release upload "raw-${MONTH}" --repo "$DATA_REPO_SLUG" --clobber "$tarball"
   echo "uploaded to GitHub Releases: raw-${MONTH}"
+  uploaded=1
 else
   echo "DATA_REPO_SLUG not set or gh missing; tarball kept locally only"
 fi
 
-# Safe to prune now that the month is archived
-bundle exec exe/observatory prune
+# Pruning is the irreversible half of this script: it deletes observations that
+# exist nowhere else once the tarball is the only copy. Writing that tarball to
+# the local disk is NOT what makes pruning safe -- getting it off this host is.
+#
+# This is not hypothetical. Between 2026-07-28 and 2026-08-12 DATA_REPO_SLUG was
+# unset and gh was not installed, so every run took the `else` branch above and
+# pruned anyway; the 2026-07 tarball sat on the observer's disk as the only copy
+# of that month. Nothing was lost only because the series was younger than
+# keep_days at the time.
+if [[ "$uploaded" == 1 || "${PRUNE_WITHOUT_UPLOAD:-0}" == 1 ]]; then
+  bundle exec exe/observatory prune
+else
+  echo "NOT pruning: ${tarball} was not uploaded, so this host holds the only copy."
+  echo "Upload it, or set PRUNE_WITHOUT_UPLOAD=1 to prune with local-only archives."
+fi
