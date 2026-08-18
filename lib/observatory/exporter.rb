@@ -8,7 +8,8 @@ module Observatory
   # No raw node lists included. clearnet and onion are recorded separately, never combined.
   # by_country / by_asn / by_user_agent contain only the top_n entries, with the
   # remainder summed into "other" (top_n is a methodology parameter; changes go
-  # into the CHANGELOG).
+  # into the CHANGELOG). by_fail_reason is deliberately not truncated — see
+  # Database#fail_count_by_reason.
   class Exporter
     def initialize(config, database)
       @config = config
@@ -66,6 +67,10 @@ module Observatory
         'candidates' => snapshot[:candidates],
         'instantaneous' => snapshot[:reachable],
         'union_24h' => @db.union_24h(snapshot[:network_class], at: snapshot[:finished_at]),
+        # Full breakdown, not a top-N: the reason set is closed and small, and
+        # the split between reasons is the only published signal of how loaded
+        # the observer was during the round.
+        'by_fail_reason' => @db.fail_count_by_reason(id),
         'by_network' => @db.success_count_by(id, :network),
         'by_user_agent' => top(@db.success_count_by(id, :user_agent), top_n),
         'crawler_ver' => snapshot[:crawler_ver],

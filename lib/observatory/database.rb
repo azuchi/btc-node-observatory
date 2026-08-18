@@ -291,6 +291,25 @@ module Observatory
       SQL
     end
 
+    # Failure counts for one snapshot, keyed by reason.
+    #
+    # Unlike the success breakdowns this is never truncated to a top-N: the
+    # reason set is closed and small (timeout / refused / unreachable /
+    # handshake_error), so a published figure here is the whole picture. That
+    # matters because the split between these reasons moves with how loaded the
+    # observer is, not only with the network — a saturated crawler records a
+    # would-be `unreachable` as `timeout` once the budget runs out.
+    #
+    # Every non-success row carries a reason, so the counts here plus
+    # `reachable` add up to `candidates` for the snapshot.
+    def fail_count_by_reason(snapshot_id)
+      @db.execute(<<~SQL, [snapshot_id]).to_h
+        SELECT COALESCE(fail_reason, 'unknown'), COUNT(*) FROM observations
+        WHERE snapshot_id = ? AND success = 0
+        GROUP BY 1 ORDER BY COUNT(*) DESC
+      SQL
+    end
+
     def success_count_by(snapshot_id, column)
       sql = case column
             when :network

@@ -58,6 +58,7 @@ RSpec.describe Observatory::Exporter do
     expect(clearnet['by_country']).to eq({ 'US' => 1, 'DE' => 1 })
     expect(clearnet['by_asn']).to eq({ 'AS16509' => 1, 'AS24940' => 1 })
     expect(clearnet['by_user_agent']).to eq({ '/Satoshi:30.0.0/' => 1, '/Satoshi:29.1.0/' => 1 })
+    expect(clearnet['by_fail_reason']).to eq({ 'timeout' => 1 })
     expect(clearnet['params_hash']).to eq('abcd1234')
 
     onion = data['snapshots'].find { |s| s['network_class'] == 'onion' }
@@ -66,6 +67,36 @@ RSpec.describe Observatory::Exporter do
     expect(onion).not_to have_key('by_country')
     expect(onion).not_to have_key('by_asn')
     expect(onion['by_network']).to eq({ 'onion' => 1 })
+    # A round with no failures publishes an empty object rather than omitting
+    # the key, so a consumer can tell "no failures" from "field not exported".
+    expect(onion['by_fail_reason']).to eq({})
+  end
+
+  it 'publishes every failure reason, never truncating to top_n' do
+    # top_n is 1 here, which would collapse a success breakdown into one entry
+    # plus "other". by_fail_reason must survive intact: the whole point of the
+    # field is the split between reasons, and "other" would erase it.
+    node_ids = 4.times.map { |i| seed_node("10.0.0.#{i}", network: 'ipv4') }
+    reasons = %w[timeout refused unreachable handshake_error]
+    s = db.create_snapshot(network_class: :clearnet, started_at: day_start + 500,
+                           candidates: 4, crawler_ver: '0.1.0', params_hash: 'abcd1234')
+    db.record_results(s, node_ids.each_with_index.map { |id, i|
+      { node_id: id, success: false, fail_reason: reasons[i] }
+    }, finished_at: day_start + 600)
+
+    data = described_class.new(build_config({ 'export' => { 'top_n' => 1 } }), db).daily(date)
+    entry = data['snapshots'].find { |x| x['ts'] == day_start + 500 }
+    expect(entry['by_fail_reason']).to eq(reasons.to_h { |r| [r, 1] })
+    expect(entry['by_fail_reason']).not_to have_key('other')
+  end
+
+  it 'accounts for every candidate: instantaneous + by_fail_reason == candidates' do
+    data = described_class.new(build_config, db).daily(date)
+    data['snapshots'].each do |s|
+      accounted = s['instantaneous'] + s['by_fail_reason'].values.sum
+      expect(accounted).to eq(s['candidates']),
+                           "#{s['network_class']}: #{accounted} accounted for, #{s['candidates']} probed"
+    end
   end
 
   it 'sums breakdown entries beyond top_n into other' do
