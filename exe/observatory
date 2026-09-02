@@ -19,6 +19,7 @@ parser = OptionParser.new do |op|
       harvest [--out PATH]     Recursive getaddr discovery; writes an import-compatible JSON
       archive [YYYY-MM]        Dump a month of raw data to gzipped NDJSON (defaults to last month)
       prune [--keep-days N]    Delete observations older than N days and VACUUM (archive first!)
+                               --dry-run reports the cutoff and affected months instead
       geoip                    Resolve GeoIP for unresolved nodes
       stats                    Show database overview
   BANNER
@@ -26,6 +27,7 @@ parser = OptionParser.new do |op|
   op.on('--file PATH', 'import: read from a JSON file') { |v| options[:file] = v }
   op.on('--out DIR', 'export/archive: output directory') { |v| options[:out] = v }
   op.on('--keep-days N', Integer, 'prune: retention in days (default: config retention.keep_days)') { |v| options[:keep_days] = v }
+  op.on('--dry-run', 'prune: report the cutoff and affected months, delete nothing') { options[:dry_run] = true }
 end
 # permute so options may come after the subcommand (e.g. `export DATE --out DIR`)
 parser.parse!
@@ -102,6 +104,13 @@ when 'prune'
   keep_days = options[:keep_days] || config.retention['keep_days']
   abort 'keep-days must be >= 2 (union_24h and daily export need recent observations)' if keep_days < 2
   cutoff = Time.now.to_i - keep_days * 86_400
+  if options[:dry_run]
+    # Read by scripts/archive_month.sh, which refuses to prune a month it cannot
+    # find an uploaded archive for. Keep both lines machine-readable.
+    puts "cutoff: #{Time.at(cutoff).utc.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+    puts "months: #{db.months_before(cutoff).join(' ')}"
+    exit 0
+  end
   size_before = File.size(config.db_path)
   deleted = db.prune_observations(before: cutoff)
   db.vacuum

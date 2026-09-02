@@ -45,9 +45,38 @@ fi
 # pruned anyway; the 2026-07 tarball sat on the observer's disk as the only copy
 # of that month. Nothing was lost only because the series was younger than
 # keep_days at the time.
-if [[ "$uploaded" == 1 || "${PRUNE_WITHOUT_UPLOAD:-0}" == 1 ]]; then
+#
+# A successful upload above only covers ${MONTH}. prune deletes by age, so it
+# reaches back across every month still holding observations older than the
+# cutoff -- and if an earlier month's run failed, or the host was down when it
+# was due, that month was never published and pruning now would destroy it.
+# So ask prune what it would touch, and require a Release for each month.
+check_months_uploaded() {
+  local months missing=()
+  months=$(bundle exec exe/observatory prune --dry-run | sed -n 's/^months: //p')
+  if [[ -z "$months" ]]; then
+    return 0
+  fi
+  for m in $months; do
+    if ! gh release view "raw-${m}" --repo "$DATA_REPO_SLUG" >/dev/null 2>&1; then
+      missing+=("$m")
+    fi
+  done
+  if (( ${#missing[@]} > 0 )); then
+    echo "NOT pruning: no uploaded archive found for: ${missing[*]}"
+    echo "Run 'scripts/archive_month.sh YYYY-MM' for each, then re-run this script."
+    return 1
+  fi
+  echo "archives verified on the Release for: ${months}"
+  return 0
+}
+
+if [[ "${PRUNE_WITHOUT_UPLOAD:-0}" == 1 ]]; then
+  echo "PRUNE_WITHOUT_UPLOAD=1: pruning without verifying that archives were uploaded"
   bundle exec exe/observatory prune
-else
+elif [[ "$uploaded" != 1 ]]; then
   echo "NOT pruning: ${tarball} was not uploaded, so this host holds the only copy."
   echo "Upload it, or set PRUNE_WITHOUT_UPLOAD=1 to prune with local-only archives."
+elif check_months_uploaded; then
+  bundle exec exe/observatory prune
 fi

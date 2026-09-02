@@ -368,6 +368,21 @@ module Observatory
       @db.changes
     end
 
+    # Months (YYYY-MM, UTC) whose snapshots start before the cutoff -- the set a
+    # prune at that cutoff would delete observations from.
+    #
+    # Derived from `snapshots` alone rather than from the surviving observation
+    # rows: `observations` has no index on snapshot_id, so an existence probe per
+    # snapshot would scan the whole table. The result is therefore a superset --
+    # it still names a month whose observations are already gone -- which is the
+    # safe direction for a caller checking each month was archived first.
+    def months_before(cutoff)
+      @db.execute(<<~SQL, [cutoff]).flatten
+        SELECT DISTINCT strftime('%Y-%m', started_at, 'unixepoch')
+        FROM snapshots WHERE started_at < ? ORDER BY 1
+      SQL
+    end
+
     # Reclaims disk space after pruning. Needs free space up to the size of the
     # remaining data while it rewrites the database file.
     def vacuum = @db.execute('VACUUM')

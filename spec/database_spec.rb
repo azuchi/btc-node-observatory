@@ -180,4 +180,34 @@ RSpec.describe Observatory::Database do
       db.vacuum
     end
   end
+
+  describe '#months_before' do
+    def snapshot_at(ts)
+      db.create_snapshot(network_class: :clearnet, started_at: ts, candidates: 1,
+                         crawler_ver: '0.1.0', params_hash: 'aaaaaaaa')
+    end
+
+    it 'names every UTC month holding a snapshot older than the cutoff' do
+      snapshot_at(Time.utc(2026, 7, 26).to_i)
+      snapshot_at(Time.utc(2026, 8, 15).to_i)
+      snapshot_at(Time.utc(2026, 9, 1).to_i)
+
+      expect(db.months_before(Time.utc(2026, 8, 28).to_i)).to eq(%w[2026-07 2026-08])
+      expect(db.months_before(Time.utc(2026, 7, 1).to_i)).to eq([])
+    end
+
+    it 'still names a month whose observations are already pruned' do
+      # The archive guard must keep demanding a Release for a month it has
+      # already emptied, so the superset is deliberate -- see the method.
+      a = add_node('1.1.1.1')
+      old_s = snapshot_at(Time.utc(2026, 7, 26).to_i)
+      db.record_results(old_s, [{ node_id: a, success: true, user_agent: '/S/', protocol_version: 70_016,
+                                  services: 0, start_height: 1, rtt_ms: 1 }],
+                        finished_at: Time.utc(2026, 7, 26, 1).to_i)
+      db.prune_observations(before: Time.utc(2026, 8, 1).to_i)
+
+      expect(db.db.get_first_value('SELECT COUNT(*) FROM observations')).to eq(0)
+      expect(db.months_before(Time.utc(2026, 8, 1).to_i)).to eq(['2026-07'])
+    end
+  end
 end

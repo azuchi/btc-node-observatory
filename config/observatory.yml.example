@@ -69,9 +69,17 @@ harvest:
 # Raw-data retention (NOT a methodology parameter; does not affect params_hash).
 # `observatory prune` deletes observations older than keep_days and VACUUMs the DB.
 # ALWAYS run `observatory archive` for the affected months first — after prune,
-# the archives are the only copy of the raw observations.
+# the archives are the only copy of the raw observations. scripts/archive_month.sh
+# enforces that by refusing to prune a month with no uploaded Release.
+#
+# 35 days, not 60: VACUUM rewrites the database and so needs free space of about
+# the retained size, which makes retention a disk-headroom setting rather than a
+# preference. The monthly archive runs on the 2nd and covers the previous month,
+# so the oldest data prune touches was already archived a month earlier — 35 days
+# keeps roughly five days of margin on top of that. Raising this without checking
+# free disk is how the monthly run starts failing on VACUUM.
 retention:
-  keep_days: 60
+  keep_days: 35
 
 # Candidate address source (the Pi / Umbrel bitcoind).
 # Use direct RPC if reachable via Tailscale etc.; otherwise cron this on the Pi:
