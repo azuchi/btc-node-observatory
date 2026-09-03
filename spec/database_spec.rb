@@ -187,18 +187,26 @@ RSpec.describe Observatory::Database do
                          crawler_ver: '0.1.0', params_hash: 'aaaaaaaa')
     end
 
-    it 'names every UTC month holding a snapshot older than the cutoff' do
-      snapshot_at(Time.utc(2026, 7, 26).to_i)
-      snapshot_at(Time.utc(2026, 8, 15).to_i)
-      snapshot_at(Time.utc(2026, 9, 1).to_i)
+    it 'names every UTC month still holding observations older than the cutoff' do
+      a = add_node('1.1.1.1')
+      [Time.utc(2026, 7, 26), Time.utc(2026, 8, 15), Time.utc(2026, 9, 1)].each do |t|
+        s = snapshot_at(t.to_i)
+        db.record_results(s, [{ node_id: a, success: true, user_agent: '/S/', protocol_version: 70_016,
+                                services: 0, start_height: 1, rtt_ms: 1 }], finished_at: t.to_i + 60)
+      end
 
       expect(db.months_before(Time.utc(2026, 8, 28).to_i)).to eq(%w[2026-07 2026-08])
       expect(db.months_before(Time.utc(2026, 7, 1).to_i)).to eq([])
     end
 
-    it 'still names a month whose observations are already pruned' do
-      # The archive guard must keep demanding a Release for a month it has
-      # already emptied, so the superset is deliberate -- see the method.
+    it 'ignores a snapshot that never recorded observations' do
+      snapshot_at(Time.utc(2026, 7, 26).to_i)
+      expect(db.months_before(Time.utc(2026, 8, 1).to_i)).to eq([])
+    end
+
+    it 'drops a month whose observations are already pruned' do
+      # Nothing left to lose there, so the archive guard must stop demanding a
+      # Release for it -- the month names data prune would delete, not history.
       a = add_node('1.1.1.1')
       old_s = snapshot_at(Time.utc(2026, 7, 26).to_i)
       db.record_results(old_s, [{ node_id: a, success: true, user_agent: '/S/', protocol_version: 70_016,
@@ -207,7 +215,7 @@ RSpec.describe Observatory::Database do
       db.prune_observations(before: Time.utc(2026, 8, 1).to_i)
 
       expect(db.db.get_first_value('SELECT COUNT(*) FROM observations')).to eq(0)
-      expect(db.months_before(Time.utc(2026, 8, 1).to_i)).to eq(['2026-07'])
+      expect(db.months_before(Time.utc(2026, 8, 1).to_i)).to eq([])
     end
   end
 end

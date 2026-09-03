@@ -368,24 +368,35 @@ module Observatory
       @db.changes
     end
 
-    # Months (YYYY-MM, UTC) whose snapshots start before the cutoff -- the set a
-    # prune at that cutoff would delete observations from.
+    # Months (YYYY-MM, UTC) that still hold observations older than the cutoff --
+    # the set a prune at that cutoff would actually delete data from, which is
+    # what scripts/archive_month.sh demands an uploaded archive for.
     #
-    # Derived from `snapshots` alone rather than from the surviving observation
-    # rows: `observations` has no index on snapshot_id, so an existence probe per
-    # snapshot would scan the whole table. The result is therefore a superset --
-    # it still names a month whose observations are already gone -- which is the
-    # safe direction for a caller checking each month was archived first.
+    # The EXISTS probe is an index seek, not a scan: `PRIMARY KEY (snapshot_id,
+    # node_id)` gives observations an implicit index led by snapshot_id. A month
+    # already emptied by an earlier prune drops out of the result, so the guard
+    # stops asking for an archive of data that no longer exists anywhere here.
     def months_before(cutoff)
       @db.execute(<<~SQL, [cutoff]).flatten
-        SELECT DISTINCT strftime('%Y-%m', started_at, 'unixepoch')
-        FROM snapshots WHERE started_at < ? ORDER BY 1
+        SELECT DISTINCT strftime('%Y-%m', s.started_at, 'unixepoch')
+        FROM snapshots s
+        WHERE s.started_at < ?
+          AND EXISTS (SELECT 1 FROM observations o WHERE o.snapshot_id = s.id)
+        ORDER BY 1
       SQL
     end
 
     # Reclaims disk space after pruning. Needs free space up to the size of the
     # remaining data while it rewrites the database file.
-    def vacuum = @db.execute('VACUUM')
+    #
+    # The checkpoint is what makes the result visible: in WAL mode VACUUM writes
+    # the rebuilt pages to the -wal file, so the database file keeps its old size
+    # until a checkpoint folds them in. Without this the 2026-09-02 run reported
+    # "3924.2MB -> 3924.2MB" for a VACUUM that had in fact reclaimed ~200MB.
+    def vacuum
+      @db.execute('VACUUM')
+      @db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    end
 
     def upsert_geo(node_id:, asn:, asn_name:, country:, resolved_at:)
       @db.execute(<<~SQL, [node_id, asn, asn_name, country, resolved_at])
