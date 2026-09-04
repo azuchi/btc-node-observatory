@@ -2,8 +2,21 @@
 Description=Archive last month's raw data and prune old observations monthly
 
 [Timer]
-# The 2nd of each month, after the daily export of the last day has been pushed
-OnCalendar=*-*-02 05:00:00 UTC
+# The 2nd of each month, 13:00 UTC.
+#
+# NOT in the morning: the onion round starts 02:32 and now runs ~4h, so 05:00
+# put a 1h31m archive squarely inside it. On a 1-core host that contention is
+# indistinguishable from a network change -- it cost us the 2026-09-02 round as
+# a read on the backoff criterion. 13:00 clears the onion window, the 09:03
+# daily export, and the apt-daily/apt-daily-upgrade window (11:05-12:04), and
+# leaves ~13h of headroom before the next onion round for an archive that grows
+# with the database.
+#
+# Persistent=true can still fire a missed run straight into the onion window
+# after downtime. That is the right trade: skipping a month is worse, and
+# scripts/archive_month.sh refuses to prune a month it has no uploaded Release
+# for, so a late run stays safe.
+OnCalendar=*-*-02 13:00:00 UTC
 RandomizedDelaySec=600
 Persistent=true
 
