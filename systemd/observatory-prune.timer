@@ -1,0 +1,23 @@
+[Unit]
+Description=Prune observations past the retention window, weekly
+
+[Timer]
+# Weekly, Sundays 16:00 UTC.
+#
+# Weekly rather than monthly: prune used to run only as the tail of the monthly
+# archive, so one failed archive meant no pruning for thirty days. The catch-up
+# on 2026-10-04 was a single 47.4M-row DELETE on a 6.5GB database, and the
+# VACUUM after it ran the disk out of space. At this cadence each run deletes
+# roughly a seventh of that and the database stays near its steady-state size.
+#
+# 16:00 clears every other job on the host: the onion round (02:32 + ~4h), the
+# harvest (05:33), the daily export (09:03), the apt windows (11:05-12:30) and
+# the monthly archive (the 2nd, 13:00 + ~1h, growing). Contention with the onion
+# round in particular is not cosmetic -- it costs that day's measurement, which
+# is how 2026-09-17 was lost.
+OnCalendar=Sun 16:00:00 UTC
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

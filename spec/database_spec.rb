@@ -181,6 +181,43 @@ RSpec.describe Observatory::Database do
     end
   end
 
+  describe '#vacuum' do
+    # 2026-10-04: a VACUUM with 3.5GB of live data and 6.74GB free raised
+    # SQLite3::FullException, which aborted a staged prune before its second
+    # stage. VACUUM needs room for a temporary rebuild AND the WAL it lands in,
+    # so the requirement is twice the live data, and falling short has to be a
+    # skip rather than an exception.
+    def live_bytes
+      page_size, pages, free_pages = %w[page_size page_count freelist_count]
+                                     .map { |p| db.db.execute("PRAGMA #{p}").flatten.first }
+      (pages - free_pages) * page_size
+    end
+
+    it 'asks for twice the live data, not once' do
+      expect(db.vacuum_bytes_needed).to eq(live_bytes * 2)
+    end
+
+    it 'skips, without raising, when the filesystem cannot take it' do
+      result = db.vacuum(free_bytes: db.vacuum_bytes_needed - 1)
+      expect(result[:status]).to eq(:skipped)
+      expect(result[:needed]).to be > result[:free]
+    end
+
+    it 'runs when there is room' do
+      expect(db.vacuum(free_bytes: db.vacuum_bytes_needed)[:status]).to eq(:done)
+    end
+
+    it 'runs rather than skips when free space cannot be measured' do
+      # Never vacuuming at all is the worse failure, so an unreadable df must
+      # not be treated as "no room".
+      expect(db.vacuum(free_bytes: nil)[:status]).to eq(:unmeasured)
+    end
+
+    it 'reports the real filesystem by default' do
+      expect(described_class.free_disk_bytes(db.path)).to be > 0
+    end
+  end
+
   describe '#months_before' do
     def snapshot_at(ts)
       db.create_snapshot(network_class: :clearnet, started_at: ts, candidates: 1,

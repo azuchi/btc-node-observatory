@@ -113,11 +113,18 @@ when 'prune'
   end
   size_before = File.size(config.db_path)
   deleted = db.prune_observations(before: cutoff)
-  db.vacuum
+  vac = db.vacuum
   size_after = File.size(config.db_path)
   mb = ->(bytes) { format('%.1fMB', bytes / 1024.0 / 1024.0) }
   puts "pruned #{deleted} observations older than #{keep_days} days " \
        "(db: #{mb.call(size_before)} -> #{mb.call(size_after)})"
+  # Not an error: the delete is committed and its pages are reusable either way.
+  # Say it loudly enough that a database which never shrinks gets noticed.
+  if vac[:status] == :skipped
+    puts "VACUUM skipped: needs #{mb.call(vac[:needed])} free, have #{mb.call(vac[:free])}. " \
+         'The freed pages stay on the freelist and are reused, so the file will not grow; ' \
+         'it will not shrink either until there is room.'
+  end
 
 when 'geoip'
   count = Observatory::Geo.from_config(config.geoip).resolve_all(db)

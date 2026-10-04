@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Archive last month's raw data as a tarball, optionally upload it to a GitHub
-# Release of the data repository, then prune old observations to free disk.
-# Meant to run monthly (systemd/observatory-archive.timer).
+# Archive last month's raw data as a tarball and upload it to a GitHub Release
+# of the data repository. Meant to run monthly (systemd/observatory-archive.timer).
+#
+# This script no longer prunes. Pruning lives in scripts/prune.sh on its own
+# weekly timer, because coupling the two meant a transient upload failure here
+# cost a whole month of pruning -- see the header of that script for what that
+# did on 2026-10-02.
 #
 # Env:
 #   DATA_REPO_SLUG  e.g. "azuchi/btc-node-data" — if set and `gh` is available,
 #                   the tarball is uploaded as release "raw-YYYY-MM".
 #   ARCHIVE_DIR     where archives are written (default: ./archives)
+#   KEEP_LOCAL      1 to keep the local copies after a successful upload.
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,58 +30,43 @@ echo "tarball: $tarball"
 
 uploaded=0
 if [[ -n "${DATA_REPO_SLUG:-}" ]] && command -v gh >/dev/null; then
-  gh release create "raw-${MONTH}" --repo "$DATA_REPO_SLUG" \
-    --title "Raw data ${MONTH}" \
-    --notes "Raw snapshots/observations for ${MONTH} (gzipped NDJSON, see meta.json)." \
-    "$tarball" \
-    || gh release upload "raw-${MONTH}" --repo "$DATA_REPO_SLUG" --clobber "$tarball"
-  echo "uploaded to GitHub Releases: raw-${MONTH}"
-  uploaded=1
+  # Reported, not left to `set -e`: on 2026-10-02 both calls failed on a few
+  # seconds of "error connecting to api.github.com" and the script died with a
+  # bare non-zero exit, so what had actually gone wrong had to be dug out of the
+  # journal afterwards.
+  if gh release create "raw-${MONTH}" --repo "$DATA_REPO_SLUG" \
+       --title "Raw data ${MONTH}" \
+       --notes "Raw snapshots/observations for ${MONTH} (gzipped NDJSON, see meta.json)." \
+       "$tarball" \
+     || gh release upload "raw-${MONTH}" --repo "$DATA_REPO_SLUG" --clobber "$tarball"; then
+    echo "uploaded to GitHub Releases: raw-${MONTH}"
+    uploaded=1
+  else
+    echo "upload FAILED for raw-${MONTH}; the tarball is kept locally at ${tarball}."
+    echo "Re-run 'scripts/archive_month.sh ${MONTH}' once GitHub is reachable."
+    echo "scripts/prune.sh will refuse to prune until that Release exists."
+    exit 1
+  fi
 else
   echo "DATA_REPO_SLUG not set or gh missing; tarball kept locally only"
 fi
 
-# Pruning is the irreversible half of this script: it deletes observations that
-# exist nowhere else once the tarball is the only copy. Writing that tarball to
-# the local disk is NOT what makes pruning safe -- getting it off this host is.
-#
-# This is not hypothetical. Between 2026-07-28 and 2026-08-12 DATA_REPO_SLUG was
-# unset and gh was not installed, so every run took the `else` branch above and
-# pruned anyway; the 2026-07 tarball sat on the observer's disk as the only copy
-# of that month. Nothing was lost only because the series was younger than
-# keep_days at the time.
-#
-# A successful upload above only covers ${MONTH}. prune deletes by age, so it
-# reaches back across every month still holding observations older than the
-# cutoff -- and if an earlier month's run failed, or the host was down when it
-# was due, that month was never published and pruning now would destroy it.
-# So ask prune what it would touch, and require a Release for each month.
-check_months_uploaded() {
-  local months missing=()
-  months=$(bundle exec exe/observatory prune --dry-run | sed -n 's/^months: //p')
-  if [[ -z "$months" ]]; then
-    return 0
+# Both the unpacked directory and the tarball built from it were being kept
+# forever after a successful upload, so every month cost twice its own size on
+# a disk that retention is already sized against: by 2026-10-04 three uploaded
+# months were holding 1.0GB for nothing. Keep them only while this host is
+# still the only copy.
+if [[ "$uploaded" == 1 && "${KEEP_LOCAL:-0}" != 1 ]]; then
+  # Verify the asset is really on the Release before deleting the local copy --
+  # `gh release create` exiting 0 is not the same as the asset being readable,
+  # and this is the step that makes the local copy redundant.
+  remote_size=$(gh release view "raw-${MONTH}" --repo "$DATA_REPO_SLUG" \
+    --json assets --jq ".assets[] | select(.name == \"raw-${MONTH}.tar\") | .size" 2>/dev/null || true)
+  local_size=$(stat -c %s "$tarball")
+  if [[ "$remote_size" == "$local_size" ]]; then
+    rm -rf "$dir" "$tarball"
+    echo "removed local copies (${local_size} bytes verified on the Release)"
+  else
+    echo "keeping local copies: Release asset is ${remote_size:-missing}, local is ${local_size}"
   fi
-  for m in $months; do
-    if ! gh release view "raw-${m}" --repo "$DATA_REPO_SLUG" >/dev/null 2>&1; then
-      missing+=("$m")
-    fi
-  done
-  if (( ${#missing[@]} > 0 )); then
-    echo "NOT pruning: no uploaded archive found for: ${missing[*]}"
-    echo "Run 'scripts/archive_month.sh YYYY-MM' for each, then re-run this script."
-    return 1
-  fi
-  echo "archives verified on the Release for: ${months}"
-  return 0
-}
-
-if [[ "${PRUNE_WITHOUT_UPLOAD:-0}" == 1 ]]; then
-  echo "PRUNE_WITHOUT_UPLOAD=1: pruning without verifying that archives were uploaded"
-  bundle exec exe/observatory prune
-elif [[ "$uploaded" != 1 ]]; then
-  echo "NOT pruning: ${tarball} was not uploaded, so this host holds the only copy."
-  echo "Upload it, or set PRUNE_WITHOUT_UPLOAD=1 to prune with local-only archives."
-elif check_months_uploaded; then
-  bundle exec exe/observatory prune
 fi

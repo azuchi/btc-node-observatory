@@ -1,0 +1,19 @@
+[Unit]
+Description=btc-node-observatory weekly retention prune
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=observatory
+WorkingDirectory=/opt/btc-node-observatory
+# Required: scripts/prune.sh refuses to prune unless it can verify, through the
+# GitHub API, that every month it would delete from has an uploaded Release.
+Environment=DATA_REPO_SLUG=azuchi/btc-node-data
+# Same token and the same reasoning as observatory-archive.service: reading the
+# Releases of the data repository is an API operation, so the deploy key that
+# pushes the daily export cannot do it.
+EnvironmentFile=-/etc/observatory-archive.env
+ExecStart=/bin/bash -lc 'scripts/prune.sh'
+# A weekly delete is ~8M rows and the VACUUM after it is small, but the first
+# run after a gap can be much larger.
+TimeoutStartSec=3h

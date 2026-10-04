@@ -66,12 +66,13 @@ module Observatory
     # released regularly, large enough to keep SQLite's batching win.
     IMPORT_BATCH_SIZE = 2_000
 
-    attr_reader :db
+    attr_reader :db, :path
 
     # backoff: the config's backoff section. Only the one-off last_probed
     # migration needs it; normal queries take these as arguments.
     def initialize(path, backoff: Observatory::Config::DEFAULTS['backoff'])
       FileUtils.mkdir_p(File.dirname(path))
+      @path = path
       @db = SQLite3::Database.new(path)
       # Writers here hold the lock for minutes, not milliseconds: a clearnet
       # round writes tens of thousands of observations and the address imports
@@ -386,16 +387,55 @@ module Observatory
       SQL
     end
 
-    # Reclaims disk space after pruning. Needs free space up to the size of the
-    # remaining data while it rewrites the database file.
+    # Bytes of free filesystem space a VACUUM needs: TWICE the live data, not
+    # once. VACUUM builds the rebuilt database as a temporary file and then, in
+    # WAL mode, lands the result in the -wal before the checkpoint folds it into
+    # the main file -- so two full copies exist alongside the original.
+    #
+    # This figure is measured, not assumed. The comment here used to say "up to
+    # the size of the remaining data", and on 2026-10-04 a VACUUM with 3.5GB of
+    # live data and 6.74GB free raised SQLite3::FullException, which is how the
+    # factor of two was found.
+    def vacuum_bytes_needed
+      page_size = @db.execute('PRAGMA page_size').flatten.first
+      pages = @db.execute('PRAGMA page_count').flatten.first
+      free_pages = @db.execute('PRAGMA freelist_count').flatten.first
+      (pages - free_pages) * page_size * 2
+    end
+
+    # Free bytes on the filesystem holding the database, or nil if df cannot say.
+    def self.free_disk_bytes(path)
+      dir = File.dirname(File.expand_path(path))
+      line = IO.popen(['df', '-Pk', '--', dir], err: File::NULL, &:read).lines[1]
+      line && (line.split[3].to_i * 1024)
+    rescue SystemCallError
+      nil
+    end
+
+    # Reclaims disk space after pruning, but only when the filesystem can take
+    # it -- see vacuum_bytes_needed. Skipping is safe and cheap: the pages freed
+    # by a prune stay on the freelist and are reused by subsequent writes, so the
+    # file stops growing even when it does not shrink. Failing the VACUUM is not
+    # cheap: it aborts the caller, which on 2026-10-04 left a staged prune with
+    # its second stage unrun.
+    #
+    # A nil free-space reading (df missing or unparseable) proceeds rather than
+    # skips: never vacuuming at all is the worse failure.
     #
     # The checkpoint is what makes the result visible: in WAL mode VACUUM writes
     # the rebuilt pages to the -wal file, so the database file keeps its old size
     # until a checkpoint folds them in. Without this the 2026-09-02 run reported
     # "3924.2MB -> 3924.2MB" for a VACUUM that had in fact reclaimed ~200MB.
-    def vacuum
+    #
+    # @return [Hash] :status is :done, :skipped or :unmeasured, with the
+    #   :needed and :free byte counts the decision was made on.
+    def vacuum(free_bytes: self.class.free_disk_bytes(@path))
+      needed = vacuum_bytes_needed
+      return { status: :skipped, needed: needed, free: free_bytes } if free_bytes && free_bytes < needed
+
       @db.execute('VACUUM')
       @db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+      { status: free_bytes ? :done : :unmeasured, needed: needed, free: free_bytes }
     end
 
     def upsert_geo(node_id:, asn:, asn_name:, country:, resolved_at:)

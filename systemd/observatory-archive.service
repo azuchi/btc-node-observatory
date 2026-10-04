@@ -1,5 +1,5 @@
 [Unit]
-Description=btc-node-observatory monthly raw archive + prune
+Description=btc-node-observatory monthly raw archive upload
 After=network-online.target
 
 [Service]
@@ -7,8 +7,8 @@ Type=oneshot
 User=observatory
 WorkingDirectory=/opt/btc-node-observatory
 # Set DATA_REPO_SLUG to upload the tarball to GitHub Releases. Without it the
-# script keeps the tarball locally and skips the prune, because this host would
-# otherwise hold the only copy of the observations being deleted.
+# script keeps the tarball locally, and scripts/prune.sh will then refuse to
+# prune, because this host would hold the only copy of those observations.
 Environment=DATA_REPO_SLUG=azuchi/btc-node-data
 # GH_TOKEN for the upload. A fine-grained PAT scoped to the data repository with
 # Contents: read/write is enough -- the deploy key that pushes the daily export
@@ -18,5 +18,5 @@ Environment=DATA_REPO_SLUG=azuchi/btc-node-data
 # checkout without the file still starts.
 EnvironmentFile=-/etc/observatory-archive.env
 ExecStart=/bin/bash -lc 'scripts/archive_month.sh'
-# VACUUM of a large database can take a while
+# Writing a month of observations out as NDJSON took 58 min on 2026-10-02.
 TimeoutStartSec=2h

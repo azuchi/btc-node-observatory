@@ -50,15 +50,27 @@ sudo cp systemd/observatory-*.{service,timer} /etc/systemd/system/
 sudo systemctl enable --now observatory-clearnet.timer   # every 15 minutes
 sudo systemctl enable --now observatory-onion.timer      # once a day (requires a dedicated Tor)
 sudo systemctl enable --now observatory-export.timer     # daily export + push
-sudo systemctl enable --now observatory-archive.timer    # monthly raw archive + prune
+sudo systemctl enable --now observatory-archive.timer    # monthly raw archive upload
+sudo systemctl enable --now observatory-prune.timer      # weekly retention prune
 sudo systemctl enable --now observatory-harvest.timer    # daily getaddr discovery (see below)
 ```
 
-The observations table grows by roughly 50–150 MB/day, so on a small disk the
-monthly archive + prune cycle is required: `scripts/archive_month.sh` dumps last
-month's raw data (`observatory archive`), uploads the tarball to a GitHub Release
-of the data repository when `DATA_REPO_SLUG` is set, then frees disk space with
-`observatory prune` (default retention 60 days; daily JSON exports are unaffected).
+The observations table grows by roughly 50–150 MB/day, so on a small disk both
+retention jobs are required. They are deliberately **separate timers**:
+
+- `scripts/archive_month.sh` (monthly) dumps last month's raw data
+  (`observatory archive`), uploads the tarball to a GitHub Release of the data
+  repository when `DATA_REPO_SLUG` is set, and deletes the local copies once the
+  Release asset's size matches.
+- `scripts/prune.sh` (weekly) deletes observations past `retention.keep_days`
+  and VACUUMs. It refuses unless every month it would delete from already has an
+  uploaded Release. Daily JSON exports are unaffected.
+
+They used to be one job, with the prune riding on the tail of the monthly
+archive. On 2026-10-02 a few seconds of GitHub unreachability aborted that
+script before the prune, so nothing was pruned for a month; the catch-up was a
+47.4M-row delete on a 6.5GB database whose VACUUM then ran the disk out of
+space. Weekly pruning keeps each delete small and retries on its own.
 
 Run **dedicated Tor instances** for the onion crawl (do not share the Umbrel/LN
 Tor daemon). One daemon cannot keep up with a 20k-address candidate set — its
@@ -108,7 +120,7 @@ observatory harvest [--out PATH]   Recursive getaddr discovery; writes an import
 observatory crawl clearnet|onion   Run a single snapshot
 observatory export [YYYY-MM-DD]    Write the daily aggregate JSON into the data repository
 observatory archive [YYYY-MM]      Dump a month of raw data to gzipped NDJSON (for GitHub Releases)
-observatory prune [--keep-days N]  Delete archived-off observations and VACUUM (default 60 days)
+observatory prune [--keep-days N]  Delete archived-off observations and VACUUM (default: retention.keep_days)
 observatory geoip                  Resolve ASN/country with GeoLite2 (requires maxmind-db config)
 observatory stats                  Show database overview
 ```
