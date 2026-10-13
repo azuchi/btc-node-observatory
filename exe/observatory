@@ -20,6 +20,9 @@ parser = OptionParser.new do |op|
       archive [YYYY-MM]        Dump a month of raw data to gzipped NDJSON (defaults to last month)
       prune [--keep-days N]    Delete observations older than N days and VACUUM (archive first!)
                                --dry-run reports the cutoff and affected months instead
+      compact                  Rewrite the database small via VACUUM INTO and swap it in.
+                               Needs one copy of the live data free, where VACUUM needs two.
+                               STOP THE TIMERS FIRST -- use scripts/compact_db.sh.
       geoip                    Resolve GeoIP for unresolved nodes
       stats                    Show database overview
   BANNER
@@ -125,6 +128,20 @@ when 'prune'
          'The freed pages stay on the freelist and are reused, so the file will not grow; ' \
          'it will not shrink either until there is room.'
   end
+
+when 'compact'
+  mb = ->(bytes) { format('%.1fMB', bytes / 1024.0 / 1024.0) }
+  needed = db.vacuum_bytes_needed / 2        # VACUUM INTO writes one copy, not two
+  free = Observatory::Database.free_disk_bytes(config.db_path)
+  if free && free < needed
+    abort "not enough room: VACUUM INTO needs #{mb.call(needed)} free, have #{mb.call(free)}"
+  end
+
+  result = db.compact
+  puts "compacted: #{mb.call(result[:size_before])} -> #{mb.call(result[:size_after])}"
+  # Not deleted here. If anything is wrong with the new file it shows up when the
+  # crawler next opens it, by which point an automatic delete would be too late.
+  puts "original kept at #{result[:backup]} -- delete it once a round has run clean"
 
 when 'geoip'
   count = Observatory::Geo.from_config(config.geoip).resolve_all(db)

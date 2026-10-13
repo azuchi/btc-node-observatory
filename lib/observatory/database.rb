@@ -392,6 +392,65 @@ module Observatory
       SQL
     end
 
+    # Tables whose row counts are compared before a compacted copy is swapped in.
+    COMPACT_VERIFY_TABLES = %w[snapshots observations nodes geo].freeze
+
+    # Rewrites the database into a compacted copy and swaps it in, as an escape
+    # from VACUUM's two-copies-of-everything appetite: VACUUM INTO writes the
+    # rebuilt database straight to its target, with no temporary rebuild and
+    # nothing routed through the -wal, so it needs ONE copy of the live data.
+    #
+    # That difference is what makes it usable here at all. On 2026-10-13 the
+    # database held 3.2GB live in a 6.5GB file with 6.3GB free: VACUUM wanted
+    # 6.4GB and was refused every week, while VACUUM INTO wants 3.2GB. On a 19GB
+    # disk the plain VACUUM can never fit again, because the file plus twice its
+    # own live data plus the OS no longer leaves room.
+    #
+    # THE CALLER MUST STOP EVERY WRITER FIRST (see scripts/compact_db.sh).
+    # VACUUM INTO snapshots the database as it stands; anything written between
+    # that snapshot and the swap goes to the old file and is discarded with it.
+    # Holding a lock is not enough -- a writer blocked on the lock still holds
+    # the old inode open and would write into a file nothing points at any more.
+    #
+    # The original is kept as <path>.bak rather than overwritten, so a failure
+    # that only shows up once the crawler reopens the database is recoverable.
+    #
+    # @return [Hash] byte sizes and the path the original was kept at
+    def compact(target: "#{@path}.compact")
+      # Before measuring anything, for the same reason #vacuum does it: until the
+      # WAL is folded in, File.size reports a database file that does not yet
+      # hold its own contents. Reading it first is how the 2026-09-02 prune came
+      # to log "3924.2MB -> 3924.2MB" for a VACUUM that had reclaimed 200MB.
+      @db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+      FileUtils.rm_f(target)
+      # Interpolated, not bound: VACUUM is not a statement the driver prepares
+      # with parameters on every SQLite build. Quote by doubling, as SQL wants.
+      @db.execute("VACUUM INTO '#{target.gsub("'", "''")}'")
+
+      before = table_counts(@db)
+      verify_compacted!(target, before)
+
+      size_before = File.size(@path)
+      size_after = File.size(target)
+      backup = "#{@path}.bak"
+
+      @db.close
+      # The -wal and -shm belong to the OLD file. Left in place they would be
+      # replayed into the new one, which is a corrupted database, not a stale one.
+      FileUtils.rm_f(["#{@path}-wal", "#{@path}-shm"])
+      File.rename(@path, backup)
+      File.rename(target, @path)
+
+      @db = SQLite3::Database.new(@path)
+      @db.busy_timeout = BUSY_TIMEOUT_MS
+      @db.execute('PRAGMA journal_mode = WAL')
+      @db.execute('PRAGMA synchronous = NORMAL')
+      @db.execute('PRAGMA foreign_keys = ON')
+      verify_counts!(table_counts(@db), before, 'swapped-in database')
+
+      { size_before: size_before, size_after: size_after, backup: backup }
+    end
+
     # Bytes of free filesystem space a VACUUM needs: TWICE the live data, not
     # once. VACUUM builds the rebuilt database as a temporary file and then, in
     # WAL mode, lands the result in the -wal before the checkpoint folds it into
@@ -466,6 +525,30 @@ module Observatory
     end
 
     private
+
+    def table_counts(handle)
+      COMPACT_VERIFY_TABLES.to_h { |t| [t, handle.get_first_value("SELECT COUNT(*) FROM #{t}")] }
+    end
+
+    # Checked before the swap, not after: once the original has been renamed
+    # away, a bad copy is all there is.
+    def verify_compacted!(target, expected)
+      copy = SQLite3::Database.new(target)
+      integrity = copy.get_first_value('PRAGMA integrity_check')
+      raise "compacted copy failed integrity_check: #{integrity}" unless integrity == 'ok'
+
+      verify_counts!(table_counts(copy), expected, 'compacted copy')
+    ensure
+      copy&.close
+    end
+
+    def verify_counts!(actual, expected, what)
+      differing = expected.reject { |t, n| actual[t] == n }
+      return if differing.empty?
+
+      detail = differing.map { |t, n| "#{t}: #{n} -> #{actual[t]}" }.join(', ')
+      raise "#{what} lost rows (#{detail})"
+    end
 
     def row_to_snapshot(row)
       {

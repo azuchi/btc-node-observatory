@@ -234,6 +234,66 @@ RSpec.describe Observatory::Database do
     end
   end
 
+  describe '#compact' do
+    def seed_rows(n)
+      ids = Array.new(n) { |i| add_node("10.0.#{i / 256}.#{i % 256}") }
+      s = db.create_snapshot(network_class: :clearnet, started_at: now, candidates: n,
+                             crawler_ver: '0.1.0', params_hash: 'aaaaaaaa')
+      db.record_results(s, ids.map do |id|
+        { node_id: id, success: true, user_agent: '/S/', protocol_version: 70_016,
+          services: 0, start_height: 1, rtt_ms: 1 }
+      end, finished_at: now + 60)
+      s
+    end
+
+    it 'shrinks the file and keeps every row, through the swap' do
+      seed_rows(400)
+      old = seed_rows(400)
+      db.prune_observations(before: now + 1)   # empties both, leaving free pages
+      seed_rows(50)
+      counted = lambda do
+        %w[observations nodes snapshots].to_h do |t|
+          [t, db.db.get_first_value("SELECT COUNT(*) FROM #{t}")]
+        end
+      end
+      before = counted.call
+
+      result = db.compact
+
+      expect(result[:size_after]).to be < result[:size_before]
+      expect(File.size(db.path)).to eq(result[:size_after])
+      # The handle must survive the swap: the object keeps being used afterwards.
+      expect(counted.call).to eq(before)
+      expect(before['observations']).to eq(50)
+      expect(old).to be_positive
+    end
+
+    it 'keeps the original rather than overwriting it' do
+      seed_rows(10)
+      result = db.compact
+      expect(File).to exist(result[:backup])
+      expect(result[:backup]).to eq("#{db.path}.bak")
+    end
+
+    it 'leaves no stale -wal or -shm to be replayed into the new file' do
+      # The old WAL belongs to the old database. Replayed into the compacted one
+      # it does not produce a stale database, it produces a corrupt one.
+      seed_rows(10)
+      db.compact
+      expect(File).not_to exist("#{db.path}.bak-wal")
+      expect(db.db.get_first_value('PRAGMA integrity_check')).to eq('ok')
+    end
+
+    it 'refuses to swap in a copy that lost rows' do
+      seed_rows(10)
+      # Source says 10, the copy reads back 9: the mismatch is the point.
+      allow(db).to receive(:table_counts).and_return({ 'observations' => 10 }, { 'observations' => 9 })
+      expect { db.compact }.to raise_error(/compacted copy lost rows/)
+      # the original is still in place and usable
+      expect(db.db.get_first_value('SELECT COUNT(*) FROM observations')).to eq(10)
+    end
+  end
+
   describe '#months_before' do
     def snapshot_at(ts)
       db.create_snapshot(network_class: :clearnet, started_at: ts, candidates: 1,
