@@ -207,6 +207,22 @@ RSpec.describe Observatory::Database do
       expect(db.vacuum(free_bytes: db.vacuum_bytes_needed)[:status]).to eq(:done)
     end
 
+    it 'checkpoints the WAL before deciding, even when it then skips' do
+      # The decision used to be made with the just-deleted pages still sitting in
+      # the -wal, i.e. at the worst moment of the run: on 2026-10-11 that cost
+      # 604MB of apparent free space and skipped a VACUUM that had room.
+      a = add_node('1.1.1.1')
+      s = db.create_snapshot(network_class: :clearnet, started_at: now, candidates: 1,
+                             crawler_ver: '0.1.0', params_hash: 'aaaaaaaa')
+      db.record_results(s, [{ node_id: a, success: true, user_agent: '/S/', protocol_version: 70_016,
+                              services: 0, start_height: 1, rtt_ms: 1 }], finished_at: now + 60)
+      wal = "#{db.path}-wal"
+      expect(File.size(wal)).to be > 0
+
+      expect(db.vacuum(free_bytes: 0)[:status]).to eq(:skipped)
+      expect(File.size?(wal).to_i).to eq(0)
+    end
+
     it 'runs rather than skips when free space cannot be measured' do
       # Never vacuuming at all is the worse failure, so an unreadable df must
       # not be treated as "no room".

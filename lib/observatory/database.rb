@@ -66,6 +66,11 @@ module Observatory
     # released regularly, large enough to keep SQLite's batching win.
     IMPORT_BATCH_SIZE = 2_000
 
+    # Sentinel for #vacuum's free_bytes, meaning "measure the filesystem". A
+    # plain nil default would collide with nil's own meaning there: that the
+    # filesystem could not be measured at all.
+    MEASURE = Object.new.freeze
+
     attr_reader :db, :path
 
     # backoff: the config's backoff section. Only the one-off last_probed
@@ -429,7 +434,19 @@ module Observatory
     #
     # @return [Hash] :status is :done, :skipped or :unmeasured, with the
     #   :needed and :free byte counts the decision was made on.
-    def vacuum(free_bytes: self.class.free_disk_bytes(@path))
+    # free_bytes: the measurement to decide on. Defaults to reading the real
+    # filesystem AFTER the checkpoint below; pass a number to force the decision,
+    # or nil to say the filesystem could not be measured.
+    def vacuum(free_bytes: MEASURE)
+      # Fold the WAL into the database before measuring anything. The caller has
+      # just deleted millions of rows, so the -wal still holds every page that
+      # delete touched, and measuring free space against that is measuring the
+      # worst moment of the whole run: on 2026-10-11 the check came up 604MB
+      # short while the -wal was holding roughly that much. The checkpoint is not
+      # extra work -- those pages get written back regardless.
+      @db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+      free_bytes = self.class.free_disk_bytes(@path) if free_bytes == MEASURE
+
       needed = vacuum_bytes_needed
       return { status: :skipped, needed: needed, free: free_bytes } if free_bytes && free_bytes < needed
 
