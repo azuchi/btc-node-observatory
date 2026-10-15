@@ -76,6 +76,13 @@ module Observatory
         'crawler_ver' => snapshot[:crawler_ver],
         'params_hash' => snapshot[:params_hash]
       }
+      # Observation conditions, so a reader can tell a round the observer was
+      # starved during from one it merely waited through -- the two look
+      # identical in by_fail_reason, and telling them apart has so far required
+      # sar on the host. Omitted entirely for rounds recorded before the crawler
+      # collected them, rather than published as nulls.
+      host = (snapshot[:host] || {}).compact
+      entry['host'] = host.transform_keys(&:to_s) unless host.empty?
       unless onion
         # Country/ASN breakdowns are clearnet only (onion has no IP/ASN).
         entry['by_country'] = top(@db.success_count_by(id, :country), top_n)

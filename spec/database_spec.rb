@@ -234,6 +234,59 @@ RSpec.describe Observatory::Database do
     end
   end
 
+  describe 'observation conditions on a snapshot' do
+    it 'adds the columns to a database that predates them, without touching its rows' do
+      # The production database is years of observations that must survive this.
+      path = File.join(Dir.mktmpdir, 'old.sqlite3')
+      old = SQLite3::Database.new(path)
+      old.execute_batch(<<~SQL)
+        CREATE TABLE snapshots (
+          id INTEGER PRIMARY KEY, network_class TEXT NOT NULL, started_at INTEGER NOT NULL,
+          finished_at INTEGER, candidates INTEGER NOT NULL, reachable INTEGER,
+          crawler_ver TEXT NOT NULL, params_hash TEXT NOT NULL);
+        INSERT INTO snapshots (network_class, started_at, finished_at, candidates, reachable,
+                               crawler_ver, params_hash)
+        VALUES ('clearnet', 1, 2, 3, 4, '0.1.0', 'aaaaaaaa');
+      SQL
+      old.close
+
+      reopened = described_class.new(path)
+      columns = reopened.db.execute('PRAGMA table_info(snapshots)').map { |c| c[1] }
+      expect(columns).to include('cpu_idle_pct', 'loadavg5')
+      row = reopened.db.execute('SELECT reachable, cpu_idle_pct FROM snapshots').first
+      expect(row).to eq([4, nil])
+    end
+
+
+    def record_with(host)
+      a = add_node('1.1.1.1')
+      s = db.create_snapshot(network_class: :clearnet, started_at: now, candidates: 1,
+                             crawler_ver: '0.1.0', params_hash: 'aaaaaaaa')
+      db.record_results(s, [{ node_id: a, success: true, user_agent: '/S/', protocol_version: 70_016,
+                              services: 0, start_height: 1, rtt_ms: 1 }], finished_at: now + 60, host: host)
+      s
+    end
+
+    it 'stores them and reads them back with the snapshot' do
+      record_with(cpu_user_pct: 61.37, cpu_idle_pct: 35.2, loadavg5: 1.33)
+      got = db.snapshots_on(Time.at(now).utc.strftime('%Y-%m-%d')).first
+      expect(got[:host]).to include(cpu_user_pct: 61.37, cpu_idle_pct: 35.2, loadavg5: 1.33)
+      expect(got[:host][:cpu_steal_pct]).to be_nil
+    end
+
+    it 'leaves them NULL when the host could not be measured' do
+      record_with({})
+      got = db.snapshots_on(Time.at(now).utc.strftime('%Y-%m-%d')).first
+      expect(got[:host].values).to all(be_nil)
+      expect(got[:reachable]).to eq(1)
+    end
+
+    it 'ignores keys that are not columns' do
+      # host comes from HostStats, but a stray key must not build broken SQL.
+      expect { record_with(cpu_idle_pct: 1.0, nonsense: 2) }.not_to raise_error
+    end
+  end
+
   describe '#compact' do
     def seed_rows(n)
       ids = Array.new(n) { |i| add_node("10.0.#{i / 256}.#{i % 256}") }

@@ -125,6 +125,21 @@ observatory geoip                  Resolve ASN/country with GeoLite2 (requires m
 observatory stats                  Show database overview
 ```
 
+### Observation conditions
+
+Each snapshot records how busy the observer was while it probed (`host` in the
+daily export: CPU user/system/idle/iowait/steal shares over the probing window,
+plus the 5-minute load average). These are conditions, not measurements, and
+they do not enter `params_hash`.
+
+They exist because a low round has two very different causes that look
+identical in `by_fail_reason`: the observer was starved, or the observer was
+waiting on the network. The idle share separates them, and on 2026-09-04,
+2026-09-17 and 2026-10-13 it had to be recovered from `sar` on the host after
+the fact — which only works for as long as sysstat keeps its history. A round
+with a high idle share and a timeout spike was waiting; one with near-zero idle
+was starved.
+
 ## Data publication (three tiers, spec §5)
 
 | Destination | Contents |

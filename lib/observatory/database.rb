@@ -17,7 +17,17 @@ module Observatory
         candidates    INTEGER NOT NULL,   -- number of probed candidates
         reachable     INTEGER,            -- number of successful handshakes
         crawler_ver   TEXT NOT NULL,      -- for methodology tracking
-        params_hash   TEXT NOT NULL       -- hash of the config parameters (change detection)
+        params_hash   TEXT NOT NULL,      -- hash of the config parameters (change detection)
+        -- Observation conditions, not measurements: how busy the observer was
+        -- while the round ran. A low round is read very differently depending on
+        -- whether idle was near zero (we were starved) or high (we were waiting
+        -- on the network). See Observatory::HostStats.
+        cpu_user_pct   REAL,
+        cpu_system_pct REAL,
+        cpu_idle_pct   REAL,
+        cpu_iowait_pct REAL,
+        cpu_steal_pct  REAL,
+        loadavg5       REAL
       );
 
       CREATE TABLE IF NOT EXISTS nodes (
@@ -88,7 +98,22 @@ module Observatory
       @db.execute('PRAGMA synchronous = NORMAL')
       @db.execute('PRAGMA foreign_keys = ON')
       @db.execute_batch(SCHEMA)
+      migrate_host_stats!
       migrate_last_probed!(backoff)
+    end
+
+    # Columns added to snapshots after the table already existed in the field.
+    HOST_STAT_COLUMNS = %w[cpu_user_pct cpu_system_pct cpu_idle_pct
+                           cpu_iowait_pct cpu_steal_pct loadavg5].freeze
+
+    # Adds the observation-condition columns to a database created before them.
+    # Pure additions with no backfill: the conditions of rounds already recorded
+    # are not retrievable, and inventing them would be worse than leaving NULL.
+    def migrate_host_stats!
+      existing = @db.execute('PRAGMA table_info(snapshots)').map { |c| c[1] }
+      (HOST_STAT_COLUMNS - existing).each do |col|
+        @db.execute("ALTER TABLE snapshots ADD COLUMN #{col} REAL")
+      end
     end
 
     # Number of rounds the one-off backlog release is spread over (96 = 24 h of
@@ -221,9 +246,11 @@ module Observatory
     # transaction is also what makes the retry safe: a failure rolls the whole
     # thing back, so the retry starts from nothing written. Chunk the address
     # imports instead — their upserts are idempotent.
-    def record_results(snapshot_id, results, finished_at:)
+    # host: observation conditions for the round, as built by
+    # Observatory::HostStats. Empty is fine and leaves the columns NULL.
+    def record_results(snapshot_id, results, finished_at:, host: {})
       with_write_retry("record_results(snapshot #{snapshot_id})") do
-        write_results(snapshot_id, results, finished_at: finished_at)
+        write_results(snapshot_id, results, finished_at: finished_at, host: host)
       end
     end
 
@@ -243,7 +270,7 @@ module Observatory
       end
     end
 
-    def write_results(snapshot_id, results, finished_at:)
+    def write_results(snapshot_id, results, finished_at:, host: {})
       @db.transaction do
         obs = @db.prepare(<<~SQL)
           INSERT INTO observations
@@ -269,8 +296,12 @@ module Observatory
         end
         [obs, ok, ng].each(&:close)
         reachable = results.count { |r| r[:success] }
-        @db.execute('UPDATE snapshots SET finished_at = ?, reachable = ? WHERE id = ?',
-                    [finished_at, reachable, snapshot_id])
+        # Written here rather than in create_snapshot: the conditions describe
+        # the round that just ran, so they are only known once it has.
+        cols = host.keys & HOST_STAT_COLUMNS.map(&:to_sym)
+        assignments = cols.map { |c| ", #{c} = ?" }.join
+        @db.execute("UPDATE snapshots SET finished_at = ?, reachable = ?#{assignments} WHERE id = ?",
+                    [finished_at, reachable, *cols.map { |c| host[c] }, snapshot_id])
       end
     end
 
@@ -279,7 +310,8 @@ module Observatory
     def snapshots_on(date_str)
       from = Time.strptime("#{date_str} +0000", '%Y-%m-%d %z').to_i
       @db.execute(<<~SQL, [from, from + 86_400]).map { |row| row_to_snapshot(row) }
-        SELECT id, network_class, started_at, finished_at, candidates, reachable, crawler_ver, params_hash
+        SELECT id, network_class, started_at, finished_at, candidates, reachable, crawler_ver, params_hash,
+               cpu_user_pct, cpu_system_pct, cpu_idle_pct, cpu_iowait_pct, cpu_steal_pct, loadavg5
         FROM snapshots
         WHERE started_at >= ? AND started_at < ? AND finished_at IS NOT NULL
         ORDER BY started_at
@@ -553,7 +585,8 @@ module Observatory
     def row_to_snapshot(row)
       {
         id: row[0], network_class: row[1], started_at: row[2], finished_at: row[3],
-        candidates: row[4], reachable: row[5], crawler_ver: row[6], params_hash: row[7]
+        candidates: row[4], reachable: row[5], crawler_ver: row[6], params_hash: row[7],
+        host: HOST_STAT_COLUMNS.each_with_index.to_h { |c, i| [c.to_sym, row[8 + i]] }
       }
     end
   end

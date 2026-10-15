@@ -47,9 +47,15 @@ module Observatory
       )
 
       prober = build_prober(network_class, params)
+      # Bracket only the probing. Candidate selection and the bulk write are the
+      # crawler's own CPU; what the recorded conditions have to describe is the
+      # window where the round was either starved or waiting.
+      cpu_before = Observatory::HostStats.sample
       results = probe_all(prober, candidates, params['concurrency'])
+      host = Observatory::HostStats.between(cpu_before, Observatory::HostStats.sample)
+      host[:loadavg5] = Observatory::HostStats.loadavg5
       finished_at = Time.now.to_i
-      @db.record_results(snapshot_id, results, finished_at: finished_at)
+      @db.record_results(snapshot_id, results, finished_at: finished_at, host: host)
 
       reachable = results.count { |r| r[:success] }
       union = @db.union_24h(network_class, at: finished_at)
